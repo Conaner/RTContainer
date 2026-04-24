@@ -38,6 +38,8 @@ links:
 - role: build-dependency
   uid: cgtest5_5
 - role: build-dependency
+  uid: cgtest5_all
+- role: build-dependency
   uid: cgtest6
 - role: build-dependency
   uid: cgtest6_2
@@ -49,6 +51,8 @@ links:
   uid: cgtest6_5
 - role: build-dependency
   uid: cgtest6_6
+- role: build-dependency
+  uid: cgtest6_all
 - role: build-dependency
   uid: orgtest1
 - role: build-dependency
