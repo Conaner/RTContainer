@@ -51,10 +51,13 @@ static rtems_task HostTask(rtems_task_argument arg)
 {
   (void) arg;
 
+  printf("[host] host task started, id=0x%08" PRIx32 "\n", host_task_id);
+
   while (!host_task_stop) {
     rtems_task_wake_after(1);
   }
 
+  printf("[host] host task stopping\n");
   rtems_task_exit();
 }
 
@@ -69,8 +72,10 @@ static rtems_task WorkerTask(rtems_task_argument arg)
   (void) arg;
 
   self = _Thread_Get_executing();
+  printf("[worker] worker task started, id=0x%08" PRIx32 "\n", self->Object.id);
   sc = rtems_unified_container_enter(pid_container, self);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+  printf("[worker] entered pid container\n");
 
   root_pid = rtems_container_get_root()->pidContainer;
   current_pid = self->container->pidContainer;
@@ -78,11 +83,22 @@ static rtems_task WorkerTask(rtems_task_argument arg)
   rtems_test_assert(current_pid != NULL);
   rtems_test_assert(root_pid != NULL);
   rtems_test_assert(current_pid != root_pid);
+  printf(
+    "[worker] root pid container id=%d, current pid container id=%d\n",
+    rtems_pid_container_get_id(root_pid),
+    rtems_pid_container_get_id(current_pid)
+  );
 
   info = rtems_pid_container_get_thread_info(self);
   rtems_test_assert(info.isRoot == 0);
   rtems_test_assert(info.containerID == rtems_pid_container_get_id(current_pid));
   rtems_test_assert(info.vid_or_id > 0);
+  printf(
+    "[worker] pid info: isRoot=%d containerID=%d vid=%d\n",
+    info.isRoot,
+    info.containerID,
+    info.vid_or_id
+  );
 
   /*
    * PID namespace isolation check:
@@ -91,9 +107,13 @@ static rtems_task WorkerTask(rtems_task_argument arg)
   rtems_test_assert(pid_container_contains(current_pid, self->Object.id));
   rtems_test_assert(!pid_container_contains(current_pid, init_task_id));
   rtems_test_assert(!pid_container_contains(current_pid, host_task_id));
+  printf(
+    "[worker] isolation check passed: self visible, init/host hidden\n"
+  );
 
   sc = rtems_unified_container_leave(pid_container, self);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+  printf("[worker] left pid container\n");
 
   sc = rtems_event_send(init_task_id, WORKER_DONE_EVENT);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
@@ -110,6 +130,7 @@ static rtems_task Init(rtems_task_argument arg)
   (void) arg;
 
   TEST_BEGIN();
+  printf("[init] container03 start\n");
 
   init_task_id = rtems_task_self();
   host_task_stop = false;
@@ -127,12 +148,14 @@ static rtems_task Init(rtems_task_argument arg)
 
   sc = rtems_task_start(host_task_id, HostTask, 0);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+  printf("[init] host task created and started, id=0x%08" PRIx32 "\n", host_task_id);
 
   rtems_unified_container_config_initialize(&config);
   config.flags = RTEMS_UNIFIED_CONTAINER_PID;
   sc = rtems_unified_container_create(&config, &pid_container);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
   rtems_test_assert(pid_container != NULL);
+  printf("[init] pid-only container created\n");
 
   sc = rtems_task_create(
     rtems_build_name('W', 'K', 'P', 'D'),
@@ -146,6 +169,7 @@ static rtems_task Init(rtems_task_argument arg)
 
   sc = rtems_task_start(worker_task_id, WorkerTask, 0);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+  printf("[init] worker task started, id=0x%08" PRIx32 "\n", worker_task_id);
 
   sc = rtems_event_receive(
     WORKER_DONE_EVENT,
@@ -154,14 +178,17 @@ static rtems_task Init(rtems_task_argument arg)
     &received
   );
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+  printf("[init] worker completion event received\n");
 
   host_task_stop = true;
   rtems_task_wake_after(2);
   sc = rtems_task_delete(host_task_id);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL || sc == RTEMS_INVALID_ID);
+  printf("[init] host task cleaned up\n");
 
   sc = rtems_unified_container_delete(pid_container);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+  printf("[init] container deleted\n");
 
   TEST_END();
   rtems_test_exit(0);
