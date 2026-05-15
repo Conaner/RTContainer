@@ -223,7 +223,7 @@ static rtems_task shm_receiver_task(rtems_task_argument arg)
 
   for (uint32_t i = 1; i <= ITERATIONS; ++i) {
     while (shm_channel.seq == last_seq) {
-      /* spin */
+      rtems_task_wake_after(1);
     }
 
     last_seq = shm_channel.seq;
@@ -267,7 +267,7 @@ static rtems_task shm_sender_task(rtems_task_argument arg)
     shm_channel.seq = i;
 
     while (shm_channel.ack != i) {
-      /* spin */
+      rtems_task_wake_after(1);
     }
 
     shm_total_ticks += rtems_counter_difference(rtems_counter_read(), begin);
@@ -350,7 +350,7 @@ static void run_shm_phase(void)
 
   sc = rtems_task_create(
     rtems_build_name('H', 'R', 'X', '1'),
-    10,
+    9,
     RTEMS_MINIMUM_STACK_SIZE * 4,
     RTEMS_DEFAULT_MODES,
     RTEMS_DEFAULT_ATTRIBUTES,
