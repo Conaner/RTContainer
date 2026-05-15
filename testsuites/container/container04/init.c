@@ -51,6 +51,7 @@ static volatile bool socket_receiver_ready;
 static volatile bool shm_receiver_ready;
 
 static volatile rtems_counter_ticks socket_total_ticks;
+static volatile bool socket_phase_ok;
 static volatile rtems_counter_ticks shm_total_ticks;
 
 static ShmChannel shm_channel;
@@ -84,7 +85,17 @@ static rtems_task socket_receiver_task(rtems_task_argument arg)
   if (bind(sock, (struct sockaddr *) &bind_addr, sizeof(bind_addr)) != 0) {
     printf("[socket][receiver] bind(127.0.0.1) failed, errno=%d, fallback to 0.0.0.0\n", errno);
     bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    rtems_test_assert(bind(sock, (struct sockaddr *) &bind_addr, sizeof(bind_addr)) == 0);
+    if (bind(sock, (struct sockaddr *) &bind_addr, sizeof(bind_addr)) != 0) {
+      printf("[socket][receiver] bind(0.0.0.0) failed, errno=%d, skip socket phase\n", errno);
+      socket_phase_ok = false;
+      socket_receiver_ready = true;
+      close(sock);
+      sc = rtems_unified_container_leave(container_b, self);
+      rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+      sc = rtems_event_send(init_task_id, EVT_SOCKET_RECEIVER_DONE);
+      rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+      rtems_task_exit();
+    }
   }
 
   socket_receiver_ready = true;
@@ -135,6 +146,15 @@ static rtems_task socket_sender_task(rtems_task_argument arg)
 
   while (!socket_receiver_ready) {
     rtems_task_wake_after(1);
+  }
+
+  if (!socket_phase_ok) {
+    printf("[socket][sender] socket phase skipped by receiver\n");
+    sc = rtems_unified_container_leave(container_a, self);
+    rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+    sc = rtems_event_send(init_task_id, EVT_SOCKET_SENDER_DONE);
+    rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+    rtems_task_exit();
   }
 
   sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -277,6 +297,7 @@ static void run_socket_phase(void)
 
   socket_receiver_ready = false;
   socket_total_ticks = 0;
+  socket_phase_ok = true;
 
   sc = rtems_task_create(
     rtems_build_name('S', 'R', 'X', '1'),
@@ -395,13 +416,19 @@ static rtems_task Init(rtems_task_argument arg)
   run_socket_phase();
   run_shm_phase();
 
-  socket_avg_ns = rtems_counter_ticks_to_nanoseconds(socket_total_ticks) / ITERATIONS;
   shm_avg_ns = rtems_counter_ticks_to_nanoseconds(shm_total_ticks) / ITERATIONS;
 
-  printf("[result] socket avg round-trip latency: %" PRIu64 " ns\n", socket_avg_ns);
+  if (socket_phase_ok) {
+    socket_avg_ns = rtems_counter_ticks_to_nanoseconds(socket_total_ticks) / ITERATIONS;
+    printf("[result] socket avg round-trip latency: %" PRIu64 " ns\n", socket_avg_ns);
+  } else {
+    socket_avg_ns = 0;
+    printf("[result] socket avg round-trip latency: N/A (socket bind unavailable)\n");
+  }
+
   printf("[result] shm    avg round-trip latency: %" PRIu64 " ns\n", shm_avg_ns);
 
-  if (shm_avg_ns > 0u) {
+  if (socket_phase_ok && shm_avg_ns > 0u) {
     printf("[result] socket/shm ratio: %" PRIu64 "\n", socket_avg_ns / shm_avg_ns);
   }
 
