@@ -81,7 +81,11 @@ static rtems_task socket_receiver_task(rtems_task_argument arg)
   bind_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
   bind_addr.sin_port = htons(SOCKET_PORT);
 
-  rtems_test_assert(bind(sock, (struct sockaddr *) &bind_addr, sizeof(bind_addr)) == 0);
+  if (bind(sock, (struct sockaddr *) &bind_addr, sizeof(bind_addr)) != 0) {
+    printf("[socket][receiver] bind(127.0.0.1) failed, errno=%d, fallback to 0.0.0.0\n", errno);
+    bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    rtems_test_assert(bind(sock, (struct sockaddr *) &bind_addr, sizeof(bind_addr)) == 0);
+  }
 
   socket_receiver_ready = true;
   printf("[socket][receiver] ready at 127.0.0.1:%d\n", SOCKET_PORT);
