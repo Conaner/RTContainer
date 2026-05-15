@@ -404,8 +404,15 @@ static rtems_task Init(rtems_task_argument arg)
   rtems_test_exit(0);
 }
 
+struct rtems_bsdnet_config rtems_bsdnet_config = {
+  NULL, NULL, 0, 0, 0, 0, 0, 0, 0,
+  {"0.0.0.0"}, {"0.0.0.0"}, 0, 0, 0, 0, 0
+};
+
 #define CONFIGURE_APPLICATION_NEEDS_CLOCK_DRIVER
 #define CONFIGURE_APPLICATION_NEEDS_SIMPLE_CONSOLE_DRIVER
+#define CONFIGURE_APPLICATION_NEEDS_LIBBLOCK
+#define CONFIGURE_APPLICATION_NEEDS_LIBNETWORKING
 
 #define CONFIGURE_MAXIMUM_TASKS 6
 #define CONFIGURE_MAXIMUM_CGROUPS 2
