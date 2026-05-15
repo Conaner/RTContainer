@@ -18,6 +18,7 @@
 #include <netinet/in.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <errno.h>
 
 const char rtems_test_name[] = "CONTAINER 04";
 
@@ -70,6 +71,9 @@ static rtems_task socket_receiver_task(rtems_task_argument arg)
   printf("[socket][receiver] entered container B\n");
 
   sock = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock < 0) {
+    printf("[socket][receiver] socket() failed, errno=%d\n", errno);
+  }
   rtems_test_assert(sock >= 0);
 
   memset(&bind_addr, 0, sizeof(bind_addr));
@@ -130,6 +134,9 @@ static rtems_task socket_sender_task(rtems_task_argument arg)
   }
 
   sock = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock < 0) {
+    printf("[socket][sender] socket() failed, errno=%d\n", errno);
+  }
   rtems_test_assert(sock >= 0);
 
   memset(&peer_addr, 0, sizeof(peer_addr));
@@ -416,6 +423,7 @@ struct rtems_bsdnet_config rtems_bsdnet_config = {
 
 #define CONFIGURE_MAXIMUM_TASKS 16
 #define CONFIGURE_MAXIMUM_CGROUPS 2
+#define CONFIGURE_MAXIMUM_FILE_DESCRIPTORS 64
 
 #define CONFIGURE_RTEMS_INIT_TASKS_TABLE
 #define CONFIGURE_INIT_TASK_ATTRIBUTES RTEMS_FLOATING_POINT
