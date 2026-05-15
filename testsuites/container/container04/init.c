@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -73,7 +74,7 @@ static rtems_task socket_receiver_task(rtems_task_argument arg)
 
   memset(&bind_addr, 0, sizeof(bind_addr));
   bind_addr.sin_family = AF_INET;
-  bind_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  bind_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
   bind_addr.sin_port = htons(SOCKET_PORT);
 
   rtems_test_assert(bind(sock, (struct sockaddr *) &bind_addr, sizeof(bind_addr)) == 0);
@@ -133,7 +134,7 @@ static rtems_task socket_sender_task(rtems_task_argument arg)
 
   memset(&peer_addr, 0, sizeof(peer_addr));
   peer_addr.sin_family = AF_INET;
-  peer_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  peer_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
   peer_addr.sin_port = htons(SOCKET_PORT);
 
   for (uint32_t i = 1; i <= ITERATIONS; ++i) {
