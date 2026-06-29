@@ -5,7 +5,10 @@ copyrights:
 - Copyright (C) 2026 RTEMS Container Project
 cppflags: []
 cxxflags: []
-enabled-by: RTEMSCFG_MONITOR_NET
+enabled-by:
+  and:
+  - RTEMSCFG_MONITOR_NET
+  - RTEMSCFG_NET_CONTAINER
 features: c cprogram
 includes: []
 ldflags: []
