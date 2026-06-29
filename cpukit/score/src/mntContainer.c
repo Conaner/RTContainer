@@ -10,9 +10,7 @@
 #include <inttypes.h>
 #include <rtems/rtems/intr.h>
 
-#ifdef RTEMSCFG_CONTAINER_LOG
 #include <rtems/score/containerlog.h>
-#endif
 
 static int g_mntContainerId = 1;
 static const char *current_eval_path = NULL;

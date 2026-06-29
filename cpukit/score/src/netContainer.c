@@ -24,9 +24,7 @@
 #include <netinet/in_var.h>
 #include <netinet/in_pcb.h>
 
-#ifdef RTEMSCFG_CONTAINER_LOG
 #include <rtems/score/containerlog.h>
-#endif
 
 #define UDBHASHSIZE 64
 #define TCBHASHSIZE 128
