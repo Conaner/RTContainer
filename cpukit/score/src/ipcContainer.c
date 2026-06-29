@@ -51,7 +51,7 @@ int rtems_ipc_container_initialize_root(IpcContainer **ipcContainer)
 IpcContainer *rtems_ipc_container_create(void)
 {
     CONTAINER_LOG_TRACE("Creating new IPC container");
-    IpcContainer *ipcContainer = (IpcContainer *)_Workspace_Allocate(sizeof(IpcContainer));
+    IpcContainer *ipcContainer = (IpcContainer *)malloc(sizeof(IpcContainer));
     if (ipcContainer == NULL)
     {
         CONTAINER_LOG_ERROR("Failed to allocate memory for new IPC container");
@@ -98,32 +98,32 @@ void rtems_ipc_container_delete(IpcContainer *ipcContainer)
 
     if (ipcContainer->rtems_message_queue_info.initial_objects)
     {
-        _Workspace_Free((void *)ipcContainer->rtems_message_queue_info.initial_objects);
+        free((void *)ipcContainer->rtems_message_queue_info.initial_objects);
     }
     if (ipcContainer->rtems_message_queue_info.local_table)
     {
-        _Workspace_Free(ipcContainer->rtems_message_queue_info.local_table);
+        free(ipcContainer->rtems_message_queue_info.local_table);
     }
 
     // if (ipcContainer->posix_message_queue_info.initial_objects)
     // {
-    //     _Workspace_Free((void *)ipcContainer->posix_message_queue_info.initial_objects);
+    //     free((void *)ipcContainer->posix_message_queue_info.initial_objects);
     // }
     // if (ipcContainer->posix_message_queue_info.local_table)
     // {
-    //     _Workspace_Free(ipcContainer->posix_message_queue_info.local_table);
+    //     free(ipcContainer->posix_message_queue_info.local_table);
     // }
 
     if (ipcContainer->semaphore_info.initial_objects)
     {
-        _Workspace_Free((void *)ipcContainer->semaphore_info.initial_objects);
+        free((void *)ipcContainer->semaphore_info.initial_objects);
     }
     if (ipcContainer->semaphore_info.local_table)
     {
-        _Workspace_Free(ipcContainer->semaphore_info.local_table);
+        free(ipcContainer->semaphore_info.local_table);
     }
 
-    _Workspace_Free(ipcContainer);
+    free(ipcContainer);
     g_currentIpcContainerNum--;
     CONTAINER_LOG_INFO("IPC container deleted successfully");
 }
@@ -141,7 +141,7 @@ void rtems_ipc_container_add_to_list(IpcContainer *ipcContainer)
         return;
     }
     IpcContainerNode **head = (IpcContainerNode **)&container->ipcContainerListHead;
-    IpcContainerNode *new_node = (IpcContainerNode *)_Workspace_Allocate(sizeof(IpcContainerNode));
+    IpcContainerNode *new_node = (IpcContainerNode *)malloc(sizeof(IpcContainerNode));
     if (!new_node)
     {
         CONTAINER_LOG_ERROR("Failed to allocate memory for IPC container list node");
@@ -180,7 +180,7 @@ void rtems_ipc_container_remove_from_list(IpcContainer *ipcContainer)
             {
                 *head = current->next;
             }
-            _Workspace_Free(current);
+            free(current);
             CONTAINER_LOG_DEBUG("IPC container removed from list: ID=%d", ipcContainer->containerID);
             return;
         }
@@ -300,7 +300,7 @@ static void _IPC_Container_Initialize_RTEMS_Message_Queue_Info(
     memset(info, 0, sizeof(Objects_Information));
     size_t object_size = sizeof(Message_queue_Control);
     Message_queue_Control *objects = (Message_queue_Control *)
-        _Workspace_Allocate(object_size * max_objects);
+        malloc(object_size * max_objects);
     if (!objects)
     {
         return;
@@ -309,10 +309,10 @@ static void _IPC_Container_Initialize_RTEMS_Message_Queue_Info(
 
     size_t table_size = sizeof(Objects_Control *) * (max_objects + 1);
     Objects_Control **local_table = (Objects_Control **)
-        _Workspace_Allocate(table_size);
+        malloc(table_size);
     if (!local_table)
     {
-        _Workspace_Free(objects);
+        free(objects);
         return;
     }
     memset(local_table, 0, table_size);
@@ -357,7 +357,7 @@ static void _IPC_Container_Initialize_POSIX_Message_Queue_Info(
 
     size_t object_size = sizeof(POSIX_Message_queue_Control);
     POSIX_Message_queue_Control *objects = (POSIX_Message_queue_Control *)
-        _Workspace_Allocate(object_size * max_objects);
+        malloc(object_size * max_objects);
     if (!objects)
     {
         return;
@@ -366,10 +366,10 @@ static void _IPC_Container_Initialize_POSIX_Message_Queue_Info(
 
     size_t table_size = sizeof(Objects_Control *) * (max_objects + 1);
     Objects_Control **local_table = (Objects_Control **)
-        _Workspace_Allocate(table_size);
+        malloc(table_size);
     if (!local_table)
     {
-        _Workspace_Free(objects);
+        free(objects);
         return;
     }
     memset(local_table, 0, table_size);
@@ -460,7 +460,7 @@ static void _IPC_Container_Initialize_Semaphore_Info(
 
     size_t object_size = sizeof(Semaphore_Control);
     Semaphore_Control *objects = (Semaphore_Control *)
-        _Workspace_Allocate(object_size * max_objects);
+        malloc(object_size * max_objects);
     if (!objects)
     {
         return;
@@ -469,10 +469,10 @@ static void _IPC_Container_Initialize_Semaphore_Info(
 
     size_t table_size = sizeof(Objects_Control *) * (max_objects + 1);
     Objects_Control **local_table = (Objects_Control **)
-        _Workspace_Allocate(table_size);
+        malloc(table_size);
     if (!local_table)
     {
-        _Workspace_Free(objects);
+        free(objects);
         return;
     }
     memset(local_table, 0, table_size);

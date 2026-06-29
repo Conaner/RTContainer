@@ -7,6 +7,7 @@
 #include <rtems/score/threadimpl.h>
 #include <rtems/score/wkspace.h>
 
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <inttypes.h>
@@ -45,13 +46,13 @@ static void *net_hashinit_local(int count, u_long *hashmask)
     }
 
     *hashmask = (u_long)(n - 1);
-    return _Workspace_Allocate((size_t)n * sizeof(void *));
+    return malloc((size_t)n * sizeof(void *));
 }
 
 static void net_hashfree_local(void *p)
 {
     if (p != NULL) {
-        _Workspace_Free(p);
+        free(p);
     }
 }
 
@@ -167,7 +168,7 @@ int rtems_net_container_initialize_root(NetContainer **netContainer)
         return -1;
     }
 
-    *netContainer = (NetContainer *)_Workspace_Allocate(sizeof(NetContainer));     // 可能存在的问题是用户初始化函数使用这个的话用户空间还没启动， 所以使用这个函数存在错误，之后调试出现问题换成malloc
+    *netContainer = (NetContainer *)malloc(sizeof(NetContainer));     // 可能存在的问题是用户初始化函数使用这个的话用户空间还没启动， 所以使用这个函数存在错误，之后调试出现问题换成malloc
     if (*netContainer == NULL)
     {
         CONTAINER_LOG_ERROR("Failed to allocate memory for root NET container");
@@ -179,7 +180,7 @@ int rtems_net_container_initialize_root(NetContainer **netContainer)
     (*netContainer)->containerID = 1;
 
     if ((*netContainer)->group == NULL) {
-        _Workspace_Free(*netContainer);
+        free(*netContainer);
         *netContainer = NULL;
         CONTAINER_LOG_ERROR("Failed to initialize net_group for root NET container");
         return -1;
@@ -194,7 +195,7 @@ int rtems_net_container_initialize_root(NetContainer **netContainer)
 // 创建独立的net_group
 static net_group* net_group_new(void)
 {
-    net_group *group = (net_group *)_Workspace_Allocate(sizeof(net_group));
+    net_group *group = (net_group *)malloc(sizeof(net_group));
     if (group == NULL) {
         return NULL;
     }
@@ -209,59 +210,59 @@ static net_group* net_group_new(void)
     group->ifnet_config = NULL;
     
     // 初始化 UDP PCB
-    group->udp_pcblist = (struct inpcbhead *)_Workspace_Allocate(sizeof(struct inpcbhead));
+    group->udp_pcblist = (struct inpcbhead *)malloc(sizeof(struct inpcbhead));
     if (group->udp_pcblist == NULL) {
-        _Workspace_Free(group);
+        free(group);
         return NULL;
     }
     LIST_INIT(group->udp_pcblist);
     
-    group->udp_pcbinfo = (struct inpcbinfo *)_Workspace_Allocate(sizeof(struct inpcbinfo));
+    group->udp_pcbinfo = (struct inpcbinfo *)malloc(sizeof(struct inpcbinfo));
     if (group->udp_pcbinfo == NULL) {
-        _Workspace_Free(group->udp_pcblist);
-        _Workspace_Free(group);
+        free(group->udp_pcblist);
+        free(group);
         return NULL;
     }
     memset(group->udp_pcbinfo, 0, sizeof(struct inpcbinfo));
     group->udp_pcbinfo->listhead = group->udp_pcblist;
     group->udp_pcbinfo->hashbase = net_hashinit_local(UDBHASHSIZE, &group->udp_pcbinfo->hashmask);
     if (group->udp_pcbinfo->hashbase == NULL) {
-        _Workspace_Free(group->udp_pcbinfo);
-        _Workspace_Free(group->udp_pcblist);
-        _Workspace_Free(group);
+        free(group->udp_pcbinfo);
+        free(group->udp_pcblist);
+        free(group);
         return NULL;
     }
     
     // 初始化 TCP PCB
-    group->tcp_pcblist = (struct inpcbhead *)_Workspace_Allocate(sizeof(struct inpcbhead));
+    group->tcp_pcblist = (struct inpcbhead *)malloc(sizeof(struct inpcbhead));
     if (group->tcp_pcblist == NULL) {
         net_hashfree_local(group->udp_pcbinfo->hashbase);
-        _Workspace_Free(group->udp_pcbinfo);
-        _Workspace_Free(group->udp_pcblist);
-        _Workspace_Free(group);
+        free(group->udp_pcbinfo);
+        free(group->udp_pcblist);
+        free(group);
         return NULL;
     }
     LIST_INIT(group->tcp_pcblist);
     
-    group->tcp_pcbinfo = (struct inpcbinfo *)_Workspace_Allocate(sizeof(struct inpcbinfo));
+    group->tcp_pcbinfo = (struct inpcbinfo *)malloc(sizeof(struct inpcbinfo));
     if (group->tcp_pcbinfo == NULL) {
-        _Workspace_Free(group->tcp_pcblist);
+        free(group->tcp_pcblist);
         net_hashfree_local(group->udp_pcbinfo->hashbase);
-        _Workspace_Free(group->udp_pcbinfo);
-        _Workspace_Free(group->udp_pcblist);
-        _Workspace_Free(group);
+        free(group->udp_pcbinfo);
+        free(group->udp_pcblist);
+        free(group);
         return NULL;
     }
     memset(group->tcp_pcbinfo, 0, sizeof(struct inpcbinfo));
     group->tcp_pcbinfo->listhead = group->tcp_pcblist;
     group->tcp_pcbinfo->hashbase = net_hashinit_local(TCBHASHSIZE, &group->tcp_pcbinfo->hashmask);
     if (group->tcp_pcbinfo->hashbase == NULL) {
-        _Workspace_Free(group->tcp_pcbinfo);
-        _Workspace_Free(group->tcp_pcblist);
+        free(group->tcp_pcbinfo);
+        free(group->tcp_pcblist);
         net_hashfree_local(group->udp_pcbinfo->hashbase);
-        _Workspace_Free(group->udp_pcbinfo);
-        _Workspace_Free(group->udp_pcblist);
-        _Workspace_Free(group);
+        free(group->udp_pcbinfo);
+        free(group->udp_pcblist);
+        free(group);
         return NULL;
     }
 
@@ -277,7 +278,7 @@ static net_group* net_group_new(void)
 #endif
 
     // 分配ifnet_addrs
-    group->ifnet_addrs = (struct ifaddr **)_Workspace_Allocate(
+    group->ifnet_addrs = (struct ifaddr **)malloc(
         group->if_indexlim * sizeof(struct ifaddr *)
     );
     if (group->ifnet_addrs == NULL) {
@@ -287,12 +288,12 @@ static net_group* net_group_new(void)
         }
 #endif
         net_hashfree_local(group->tcp_pcbinfo->hashbase);
-        _Workspace_Free(group->tcp_pcbinfo);
-        _Workspace_Free(group->tcp_pcblist);
+        free(group->tcp_pcbinfo);
+        free(group->tcp_pcblist);
         net_hashfree_local(group->udp_pcbinfo->hashbase);
-        _Workspace_Free(group->udp_pcbinfo);
-        _Workspace_Free(group->udp_pcblist);
-        _Workspace_Free(group);
+        free(group->udp_pcbinfo);
+        free(group->udp_pcblist);
+        free(group);
         return NULL;
     }
     memset(group->ifnet_addrs, 0, group->if_indexlim * sizeof(struct ifaddr *));
@@ -331,10 +332,10 @@ static void net_group_free(net_group *group)
         if (group->tcp_pcbinfo->hashbase) {
             net_hashfree_local(group->tcp_pcbinfo->hashbase);
         }
-        _Workspace_Free(group->tcp_pcbinfo);
+        free(group->tcp_pcbinfo);
     }
     if (group->tcp_pcblist) {
-        _Workspace_Free(group->tcp_pcblist);
+        free(group->tcp_pcblist);
     }
     
     // 释放 UDP PCB
@@ -342,17 +343,17 @@ static void net_group_free(net_group *group)
         if (group->udp_pcbinfo->hashbase) {
             net_hashfree_local(group->udp_pcbinfo->hashbase);
         }
-        _Workspace_Free(group->udp_pcbinfo);
+        free(group->udp_pcbinfo);
     }
     if (group->udp_pcblist) {
-        _Workspace_Free(group->udp_pcblist);
+        free(group->udp_pcblist);
     }
     
     if (group->ifnet_addrs != NULL) {
-        _Workspace_Free(group->ifnet_addrs);
+        free(group->ifnet_addrs);
     }
     
-    _Workspace_Free(group);
+    free(group);
 }
 
 // 为容器创建独立的 loopback 接口
@@ -405,7 +406,7 @@ static int create_loopback_for_container(NetContainer *netContainer)
 NetContainer *rtems_net_container_create(void)
 {
     CONTAINER_LOG_TRACE("Creating new NET container");
-    NetContainer *netContainer = (NetContainer *)_Workspace_Allocate(sizeof(NetContainer));
+    NetContainer *netContainer = (NetContainer *)malloc(sizeof(NetContainer));
     if (netContainer == NULL)
     {
         CONTAINER_LOG_ERROR("Failed to allocate memory for new NET container");
@@ -418,7 +419,7 @@ NetContainer *rtems_net_container_create(void)
     // 创建net_group
     netContainer->group = net_group_new();
     if (netContainer->group == NULL) {
-        _Workspace_Free(netContainer);
+        free(netContainer);
         CONTAINER_LOG_ERROR("Failed to initialize net_group for NET container");
         return NULL;
     }
@@ -429,7 +430,7 @@ NetContainer *rtems_net_container_create(void)
     if (create_loopback_for_container(netContainer) != 0) {
         printf("错误: 容器%d loopback 接口创建失败\n", netContainer->containerID);
         net_group_free(netContainer->group);
-        _Workspace_Free(netContainer);
+        free(netContainer);
         CONTAINER_LOG_ERROR("Failed to create loopback for NET container: ID=%d", netContainer->containerID);
         return NULL;
     }
@@ -530,7 +531,7 @@ void rtems_net_container_delete(NetContainer *netContainer)
     g_currentNetContainerNum--;
     
     // 释放容器本身
-    _Workspace_Free(netContainer);
+    free(netContainer);
     CONTAINER_LOG_INFO("NET container deleted successfully");
 }
 
@@ -545,7 +546,7 @@ void rtems_net_container_add_to_list(NetContainer *netContainer)
         return;
 
     NetContainerNode **head = (NetContainerNode **)&container->netContainerListHead;
-    NetContainerNode *new_node = (NetContainerNode *)_Workspace_Allocate(sizeof(NetContainerNode));
+    NetContainerNode *new_node = (NetContainerNode *)malloc(sizeof(NetContainerNode));
     if (!new_node)
         return;
 
@@ -584,7 +585,7 @@ void rtems_net_container_remove_from_list(NetContainer *netContainer)
                 *head = current->next;
             }
 
-            _Workspace_Free(current);
+            free(current);
             printf("从链表中移除net容器: ID=%d, 地址=%p\n", netContainer->containerID, (void *)netContainer);    //调试完成之后再注释掉
             CONTAINER_LOG_DEBUG("NET container removed from list: ID=%d", netContainer->containerID);
             return;
