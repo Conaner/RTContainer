@@ -48,6 +48,8 @@ links:
 - role: build-dependency
   uid: cgtest6_5
 - role: build-dependency
+  uid: cgtest6_6
+- role: build-dependency
   uid: orgtest1
 - role: build-dependency
   uid: orgtest2

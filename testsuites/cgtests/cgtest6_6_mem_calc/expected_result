@@ -1,0 +1,33 @@
+*** BEGIN OF TEST CGTEST6-6 MEM CALC ***
+*** TEST VERSION: 6.0.0
+*** TEST STATE: EXPECTED_PASS
+*** TEST BUILD: RTEMS_POSIX_API
+*** TEST TOOLS: 13.3.0 20240521
+Config: 1 cgroup, memory_limit=1099511627776 bytes (far above physical heap)
+Worker task started in CG1, mem quota=1099511627776
+[Phase A] shrink should reclaim physical memory and let retry succeed
+[Phase A] largest free block = <N> bytes
+[Phase A] Allocated reclaimable (shared) buffer of <N> bytes
+[Phase A] Requesting <N> bytes (exceeds remaining physical memory)
+[cgroup-mem] Phase A request, before malloc: occupied=<N> bytes, system free=<N> bytes
+[Shrink Callback] triggered, allocator needs <N> bytes
+[cgroup-mem] shrink triggered, before reclaim: occupied=<N> bytes, system free=<N> bytes
+[Shrink Callback] freed reclaimable buffer of <N> bytes
+[cgroup-mem] shrink finished, after reclaim: occupied=<N> bytes, system free=<N> bytes
+[cgroup-mem] Phase A request, after malloc: occupied=<N> bytes, system free=<N> bytes
+[Phase A] Allocation succeeded after shrink reclaimed physical memory
+[Phase B] shrink cannot help; allocator must report physical OOM
+[Phase B] Allocated reclaimable (shared) buffer of <N> bytes
+[Phase B] Requesting <N> bytes (larger than entire heap)
+[cgroup-mem] Phase B request, before malloc: occupied=<N> bytes, system free=<N> bytes
+[Shrink Callback] triggered, allocator needs <N> bytes
+[cgroup-mem] shrink triggered, before reclaim: occupied=<N> bytes, system free=<N> bytes
+[Shrink Callback] freed reclaimable buffer of <N> bytes
+[cgroup-mem] shrink finished, after reclaim: occupied=<N> bytes, system free=<N> bytes
+[cgroup-mem] Phase B request, after malloc: occupied=<N> bytes, system free=<N> bytes
+[Phase B] Allocation failed: genuine physical OOM after shrink
+[Phase B] failed_allocs incremented -> reported as physical OOM
+Init waiting for worker completion
+CGTEST6-6 completed: physical OOM triggers shrink+retry; unrecoverable OOM returns NULL
+
+*** END OF TEST CGTEST6-6 MEM CALC ***
