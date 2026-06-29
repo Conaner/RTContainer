@@ -10,9 +10,7 @@
 #include <rtems/rtems/semdata.h>
 #include <rtems/rtems/intr.h>
 
-#ifdef RTEMSCFG_CONTAINER_LOG
 #include <rtems/score/containerlog.h>
-#endif
 
 static int g_ipcContainerIdCounter = 1;
 static int g_currentIpcContainerNum = 0;

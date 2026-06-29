@@ -6,9 +6,7 @@
 #include <stdlib.h>
 #include <rtems/score/threadimpl.h>
 
-#ifdef RTEMSCFG_CONTAINER_LOG
 #include <rtems/score/containerlog.h>
-#endif
 
 static int g_utsContainerId = 0;
 /* Static root pointer avoids accidental root deletion after task moves. */
