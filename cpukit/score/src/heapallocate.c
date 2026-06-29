@@ -237,6 +237,9 @@ void *_Heap_Allocate_aligned_with_boundary(
   uintptr_t alloc_begin = 0;
   uint32_t search_count = 0;
   bool search_again = false;
+#ifdef RTEMS_CGROUP
+  bool cgroup_shrink_attempted = false;
+#endif
 
   if ( block_size_floor < alloc_size ) {
     /* Integer overflow occurred */
@@ -253,6 +256,9 @@ void *_Heap_Allocate_aligned_with_boundary(
     }
   }
 
+#ifdef RTEMS_CGROUP
+_cgroup_search_retry:
+#endif
   do {
     Heap_Block *const free_list_tail = _Heap_Free_list_tail( heap );
 
@@ -293,6 +299,32 @@ void *_Heap_Allocate_aligned_with_boundary(
 
     search_again = _Heap_Protection_free_delayed_blocks( heap, alloc_begin );
   } while ( search_again );
+
+#ifdef RTEMS_CGROUP
+  /*
+   * Physical out-of-memory: the heap holds no block large enough to satisfy
+   * the request.  This is distinct from the cgroup quota-overflow case below,
+   * where the physical allocation succeeded but would exceed the cgroup memory
+   * limit.  Before reporting failure, give the executing thread's cgroup a
+   * chance to release memory through its shrink callback and retry the search
+   * once.  The callback frees memory via _Heap_Free(), which also credits the
+   * released bytes back to mem_quota_available, so the quota accounting below
+   * stays correct on the retry.
+   */
+  if ( alloc_begin == 0 && !cgroup_shrink_attempted ) {
+    const Thread_Control *executing = _Thread_Get_executing();
+
+    if ( executing != NULL && executing->is_added_to_cgroup ) {
+      CORE_cgroup_Control *cgroup = executing->cgroup;
+
+      if ( cgroup->shrink_callback != NULL ) {
+        cgroup_shrink_attempted = true;
+        cgroup->shrink_callback( cgroup->shrink_arg, alloc_size );
+        goto _cgroup_search_retry;
+      }
+    }
+  }
+#endif
 
   if ( alloc_begin != 0 ) {
     block = _Heap_Block_allocate( heap, block, alloc_begin, alloc_size );
