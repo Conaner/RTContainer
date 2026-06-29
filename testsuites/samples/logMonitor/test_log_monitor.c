@@ -3,6 +3,7 @@
  */
 
 #include <rtems.h>
+#include <rtems/counter.h>
 #include <rtems/printer.h>
 #include <rtems/score/container.h>
 #include <rtems/score/containerlog.h>
@@ -11,8 +12,11 @@
 #include <rtems/score/utsContainer.h>
 
 #include <inttypes.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#define LOG_WRITE_ITERATIONS 32U
 
 static void print_recent_entries(void)
 {
@@ -29,6 +33,74 @@ static void print_recent_entries(void)
       entries[i].message
     );
   }
+}
+
+static bool recent_entries_include_level(container_log_level_t level)
+{
+  container_log_entry_t entries[16];
+  uint32_t count;
+  uint32_t i;
+
+  count = container_log_get_entries(entries, 16);
+  for (i = 0; i < count; ++i) {
+    if (entries[i].level == level) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static void measure_log_write_latency(void)
+{
+  rtems_counter_ticks start;
+  rtems_counter_ticks end;
+  rtems_counter_ticks elapsed;
+  uint64_t elapsed_ns;
+  uint32_t i;
+
+  start = rtems_counter_read();
+  for (i = 0; i < LOG_WRITE_ITERATIONS; ++i) {
+    CONTAINER_LOG_INFO("Log write latency sample %" PRIu32, i + 1U);
+  }
+  end = rtems_counter_read();
+
+  elapsed = rtems_counter_difference(end, start);
+  elapsed_ns = rtems_counter_ticks_to_nanoseconds(elapsed);
+
+  printf(
+    "Log write latency: %" PRIu32 " entries in %" PRIu64 " ns, avg %" PRIu64 " ns/entry\n",
+    LOG_WRITE_ITERATIONS,
+    elapsed_ns,
+    elapsed_ns / LOG_WRITE_ITERATIONS
+  );
+}
+
+static void exercise_error_paths(Thread_Control *self, UtsContainer *root_uts)
+{
+  UtsContainer *default_name_child;
+
+  printf("\nSimulating log error paths\n");
+
+  default_name_child = rtems_uts_container_create(NULL);
+  if (default_name_child != NULL) {
+    printf(
+      "  NULL name create fallback: id=%d name=%s\n",
+      default_name_child->ID,
+      default_name_child->name
+    );
+    rtems_uts_container_delete(default_name_child);
+  }
+
+  rtems_uts_container_move_task(root_uts, NULL, self);
+  printf(
+    "  WARN log observed: %s\n",
+    recent_entries_include_level(CONTAINER_LOG_WARN) ? "yes" : "no"
+  );
+  printf(
+    "  ERROR log observed: %s\n",
+    recent_entries_include_level(CONTAINER_LOG_ERROR) ? "yes" : "no"
+  );
 }
 
 static rtems_task Init(rtems_task_argument arg)
@@ -64,6 +136,7 @@ static rtems_task Init(rtems_task_argument arg)
   rtems_monitor_sample();
   rtems_monitor_get_snapshot(&snapshot);
   rtems_monitor_print_line();
+  measure_log_write_latency();
 
   printf("Monitor snapshot:\n");
 #ifdef RTEMSCFG_MONITOR_CPU
@@ -102,6 +175,8 @@ static rtems_task Init(rtems_task_argument arg)
       child->rc--;
       rtems_uts_container_delete(child);
     }
+
+    exercise_error_paths(self, root_uts);
   }
 #endif
 
