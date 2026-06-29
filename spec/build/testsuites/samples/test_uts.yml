@@ -5,9 +5,13 @@ copyrights:
 - Copyright (C) 2020 embedded brains GmbH & Co. KG
 cppflags: []
 cxxflags: []
-enabled-by: RTEMSCFG_UTS_CONTAINER
+enabled-by:
+  and:
+  - RTEMSCFG_UTS_CONTAINER
+  - RTEMSCFG_NET_CONTAINER
 features: c cprogram
-includes: []
+includes:
+- cpukit/libnetworking
 ldflags: []
 links: []
 source:
