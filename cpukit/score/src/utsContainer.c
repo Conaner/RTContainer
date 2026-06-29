@@ -54,6 +54,10 @@ UtsContainer *rtems_uts_container_create(const char *name)
         strncpy(container->name, name, sizeof(container->name) - 1);
         container->name[sizeof(container->name) - 1] = '\0';
     } else {
+        CONTAINER_LOG_WARN(
+          "UTS container name is %s, using default name",
+          name == NULL ? "NULL" : "empty"
+        );
         strcpy(container->name, "uts");
     }      
 
