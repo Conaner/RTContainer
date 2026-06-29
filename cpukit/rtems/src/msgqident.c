@@ -48,5 +48,14 @@ rtems_status_code rtems_message_queue_ident(
   rtems_id   *id
 )
 {
-  return _RTEMS_Name_to_id( name, node, id, &_Message_queue_Information );
+  return _RTEMS_Name_to_id(
+    name,
+    node,
+    id,
+#ifdef RTEMSCFG_IPC_CONTAINER
+    _Message_queue_Get_information_from_container()
+#else
+    &_Message_queue_Information
+#endif
+  );
 }

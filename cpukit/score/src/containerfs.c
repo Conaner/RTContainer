@@ -9,6 +9,7 @@
 #include <rtems/score/containerfs.h>
 
 #include <stdbool.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -31,6 +32,16 @@
 
 #ifdef RTEMSCFG_IPC_CONTAINER
 #include <rtems/score/ipcContainer.h>
+#endif
+
+#ifdef RTEMS_CGROUP
+#include <rtems/rtems/cgroup.h>
+#include <rtems/rtems/cgroupimpl.h>
+#include <rtems/score/corecgroupimpl.h>
+#endif
+
+#ifdef RTEMSCFG_IO_CGROUP
+#include <rtems/io_cgroup.h>
 #endif
 
 #ifdef RTEMSCFG_CONTAINER_FILE
@@ -57,6 +68,83 @@ static size_t containerfs_copy_command(char *cmd, size_t cmd_size, const void *b
 
   return n;
 }
+
+#ifdef RTEMS_CGROUP
+#define CONTAINERFS_CGROUP_TRACK_MAX 32
+
+static rtems_id containerfs_cgroup_ids[CONTAINERFS_CGROUP_TRACK_MAX];
+static size_t containerfs_cgroup_id_count;
+static uint32_t containerfs_cgroup_name_index;
+
+static void containerfs_cgroup_track_add(rtems_id id)
+{
+  size_t i;
+
+  for (i = 0; i < containerfs_cgroup_id_count; ++i) {
+    if (containerfs_cgroup_ids[i] == id) {
+      return;
+    }
+  }
+
+  if (containerfs_cgroup_id_count < CONTAINERFS_CGROUP_TRACK_MAX) {
+    containerfs_cgroup_ids[containerfs_cgroup_id_count++] = id;
+  }
+}
+
+static void containerfs_cgroup_track_remove(rtems_id id)
+{
+  size_t i;
+
+  for (i = 0; i < containerfs_cgroup_id_count; ++i) {
+    if (containerfs_cgroup_ids[i] == id) {
+      size_t j;
+      for (j = i + 1; j < containerfs_cgroup_id_count; ++j) {
+        containerfs_cgroup_ids[j - 1] = containerfs_cgroup_ids[j];
+      }
+      --containerfs_cgroup_id_count;
+      return;
+    }
+  }
+}
+#endif
+
+#ifdef RTEMSCFG_IO_CGROUP
+#define CONTAINERFS_IOCGROUP_TRACK_MAX 32
+
+static uint32_t containerfs_iocgroup_ids[CONTAINERFS_IOCGROUP_TRACK_MAX];
+static size_t containerfs_iocgroup_id_count;
+
+static void containerfs_iocgroup_track_add(uint32_t id)
+{
+  size_t i;
+
+  for (i = 0; i < containerfs_iocgroup_id_count; ++i) {
+    if (containerfs_iocgroup_ids[i] == id) {
+      return;
+    }
+  }
+
+  if (containerfs_iocgroup_id_count < CONTAINERFS_IOCGROUP_TRACK_MAX) {
+    containerfs_iocgroup_ids[containerfs_iocgroup_id_count++] = id;
+  }
+}
+
+static void containerfs_iocgroup_track_remove(uint32_t id)
+{
+  size_t i;
+
+  for (i = 0; i < containerfs_iocgroup_id_count; ++i) {
+    if (containerfs_iocgroup_ids[i] == id) {
+      size_t j;
+      for (j = i + 1; j < containerfs_iocgroup_id_count; ++j) {
+        containerfs_iocgroup_ids[j - 1] = containerfs_iocgroup_ids[j];
+      }
+      --containerfs_iocgroup_id_count;
+      return;
+    }
+  }
+}
+#endif
 
 #ifdef RTEMSCFG_PID_CONTAINER
 static ssize_t pidctl_write(rtems_libio_t *iop, const void *buffer, size_t count)
@@ -784,6 +872,438 @@ void rtems_containerfs_register_ipcctl(void)
 }
 #endif
 
+#ifdef RTEMS_CGROUP
+static ssize_t cpuctl_write(rtems_libio_t *iop, const void *buffer, size_t count)
+{
+  char cmd[256];
+
+  (void) iop;
+  if (containerfs_copy_command(cmd, sizeof(cmd), buffer, count) == 0) {
+    return (ssize_t) count;
+  }
+
+  if (strncmp(cmd, "create", 6) == 0) {
+    uint32_t quota = 100;
+    uint32_t period = 1000;
+    uint32_t shares = 1;
+    CORE_cgroup_config config;
+    rtems_id id;
+    rtems_status_code sc;
+    rtems_name name;
+
+    (void) sscanf(cmd + 6, "%u %u %u", &quota, &period, &shares);
+    name = rtems_build_name('C', 'P', 'U', '0' + (containerfs_cgroup_name_index++ % 10));
+    config.cpu_shares = shares;
+    config.cpu_quota = quota;
+    config.cpu_period = period;
+    config.memory_limit = 0;
+    config.blkio_limit = 0;
+    sc = rtems_cgroup_create(name, &id, &config);
+    if (sc == RTEMS_SUCCESSFUL) {
+      containerfs_cgroup_track_add(id);
+      printf("[cpuctl] created: id=%" PRIu32 ", quota=%u, period=%u, shares=%u\n", id, quota, period, shares);
+    } else {
+      printf("[cpuctl] create failed: sc=%d\n", sc);
+    }
+  } else if (strncmp(cmd, "set", 3) == 0) {
+    uint32_t id;
+    uint32_t quota;
+    uint32_t period;
+
+    if (sscanf(cmd + 3, "%" SCNu32 " %u %u", &id, &quota, &period) == 3) {
+      ISR_lock_Context lock_context;
+      Cgroup_Control *cg;
+
+      cg = _Cgroup_Get(id, &lock_context);
+      _ISR_lock_ISR_enable(&lock_context);
+      if (cg != NULL) {
+        _CORE_cgroup_set_cpu_quota(&cg->cgroup, quota, period);
+        printf("[cpuctl] updated: id=%" PRIu32 ", quota=%u, period=%u\n", id, quota, period);
+      } else {
+        printf("[cpuctl] set: id=%" PRIu32 " not found\n", id);
+      }
+    } else {
+      printf("[cpuctl] usage: set <id> <quota> <period>\n");
+    }
+  } else if (strncmp(cmd, "delete", 6) == 0) {
+    uint32_t id;
+    if (sscanf(cmd + 6, "%" SCNu32, &id) == 1) {
+      rtems_status_code sc = rtems_cgroup_delete(id);
+      if (sc == RTEMS_SUCCESSFUL) {
+        containerfs_cgroup_track_remove(id);
+        printf("[cpuctl] deleted: id=%" PRIu32 "\n", id);
+      } else {
+        printf("[cpuctl] delete failed: id=%" PRIu32 ", sc=%d\n", id, sc);
+      }
+    } else {
+      printf("[cpuctl] usage: delete <id>\n");
+    }
+  } else if (strcmp(cmd, "list") == 0) {
+    size_t i;
+    if (containerfs_cgroup_id_count == 0) {
+      printf("[cpuctl] list: empty\n");
+    } else {
+      printf("[cpuctl] list:");
+      for (i = 0; i < containerfs_cgroup_id_count; ++i) {
+        ISR_lock_Context lock_context;
+        Cgroup_Control *cg = _Cgroup_Get(containerfs_cgroup_ids[i], &lock_context);
+        _ISR_lock_ISR_enable(&lock_context);
+        if (cg != NULL && cg->cgroup.config != NULL) {
+          printf(
+            " id=%" PRIu32 "(quota=%" PRIu64 ",period=%" PRIu64 ")",
+            containerfs_cgroup_ids[i],
+            cg->cgroup.config->cpu_quota,
+            cg->cgroup.config->cpu_period
+          );
+        }
+      }
+      printf("\n");
+    }
+  } else {
+    printf("[cpuctl] supported: create [quota period shares] | set <id> <quota> <period> | delete <id> | list\n");
+  }
+
+  return (ssize_t) count;
+}
+
+static const rtems_filesystem_file_handlers_r cpuctl_handlers = {
+  .open_h = rtems_filesystem_default_open,
+  .close_h = rtems_filesystem_default_close,
+  .read_h = rtems_filesystem_default_read,
+  .write_h = cpuctl_write,
+  .ioctl_h = rtems_filesystem_default_ioctl,
+  .lseek_h = rtems_filesystem_default_lseek,
+  .fstat_h = rtems_filesystem_default_fstat,
+  .ftruncate_h = rtems_filesystem_default_ftruncate,
+  .fsync_h = rtems_filesystem_default_fsync_or_fdatasync_success,
+  .fdatasync_h = rtems_filesystem_default_fsync_or_fdatasync_success,
+  .fcntl_h = rtems_filesystem_default_fcntl,
+  .readv_h = rtems_filesystem_default_readv,
+  .writev_h = rtems_filesystem_default_writev
+};
+
+static const IMFS_node_control cpuctl_node_control = {
+  .handlers = &cpuctl_handlers,
+  .node_initialize = IMFS_node_initialize_generic,
+  .node_remove = IMFS_node_remove_default,
+  .node_destroy = IMFS_node_destroy_default
+};
+
+void rtems_containerfs_register_cpuctl(void)
+{
+  static bool created = false;
+  int rv;
+
+  if (created) {
+    return;
+  }
+
+  rv = IMFS_make_generic_node(
+    "/cpuctl",
+    S_IFCHR | S_IRWXU | S_IRWXG | S_IRWXO,
+    &cpuctl_node_control,
+    NULL
+  );
+  if (rv == 0) {
+    created = true;
+    printf("[cpuctl] control file registered at /cpuctl\n");
+  } else {
+    printf("[cpuctl] failed to register control file (rv=%d)\n", rv);
+  }
+}
+
+static ssize_t memctl_write(rtems_libio_t *iop, const void *buffer, size_t count)
+{
+  char cmd[256];
+
+  (void) iop;
+  if (containerfs_copy_command(cmd, sizeof(cmd), buffer, count) == 0) {
+    return (ssize_t) count;
+  }
+
+  if (strncmp(cmd, "create", 6) == 0) {
+    uint64_t memory_limit = 1024 * 1024;
+    CORE_cgroup_config config;
+    rtems_id id;
+    rtems_status_code sc;
+    rtems_name name;
+
+    (void) sscanf(cmd + 6, "%" SCNu64, &memory_limit);
+    name = rtems_build_name('M', 'E', 'M', '0' + (containerfs_cgroup_name_index++ % 10));
+    config.cpu_shares = 1;
+    config.cpu_quota = 0;
+    config.cpu_period = 0;
+    config.memory_limit = memory_limit;
+    config.blkio_limit = 0;
+    sc = rtems_cgroup_create(name, &id, &config);
+    if (sc == RTEMS_SUCCESSFUL) {
+      containerfs_cgroup_track_add(id);
+      printf("[memctl] created: id=%" PRIu32 ", memory_limit=%" PRIu64 "\n", id, memory_limit);
+    } else {
+      printf("[memctl] create failed: sc=%d\n", sc);
+    }
+  } else if (strncmp(cmd, "set", 3) == 0) {
+    uint32_t id;
+    uint64_t memory_limit;
+
+    if (sscanf(cmd + 3, "%" SCNu32 " %" SCNu64, &id, &memory_limit) == 2) {
+      ISR_lock_Context lock_context;
+      Cgroup_Control *cg;
+
+      cg = _Cgroup_Get(id, &lock_context);
+      _ISR_lock_ISR_enable(&lock_context);
+      if (cg != NULL && cg->cgroup.config != NULL) {
+        cg->cgroup.config->memory_limit = memory_limit;
+        cg->cgroup.mem_quota_available = memory_limit;
+        printf("[memctl] updated: id=%" PRIu32 ", memory_limit=%" PRIu64 "\n", id, memory_limit);
+      } else {
+        printf("[memctl] set: id=%" PRIu32 " not found\n", id);
+      }
+    } else {
+      printf("[memctl] usage: set <id> <memory_limit>\n");
+    }
+  } else if (strncmp(cmd, "delete", 6) == 0) {
+    uint32_t id;
+    if (sscanf(cmd + 6, "%" SCNu32, &id) == 1) {
+      rtems_status_code sc = rtems_cgroup_delete(id);
+      if (sc == RTEMS_SUCCESSFUL) {
+        containerfs_cgroup_track_remove(id);
+        printf("[memctl] deleted: id=%" PRIu32 "\n", id);
+      } else {
+        printf("[memctl] delete failed: id=%" PRIu32 ", sc=%d\n", id, sc);
+      }
+    } else {
+      printf("[memctl] usage: delete <id>\n");
+    }
+  } else if (strcmp(cmd, "list") == 0) {
+    size_t i;
+    if (containerfs_cgroup_id_count == 0) {
+      printf("[memctl] list: empty\n");
+    } else {
+      printf("[memctl] list:");
+      for (i = 0; i < containerfs_cgroup_id_count; ++i) {
+        ISR_lock_Context lock_context;
+        Cgroup_Control *cg = _Cgroup_Get(containerfs_cgroup_ids[i], &lock_context);
+        _ISR_lock_ISR_enable(&lock_context);
+        if (cg != NULL && cg->cgroup.config != NULL) {
+          printf(" id=%" PRIu32 "(limit=%" PRIu64 ")", containerfs_cgroup_ids[i], cg->cgroup.config->memory_limit);
+        }
+      }
+      printf("\n");
+    }
+  } else {
+    printf("[memctl] supported: create [memory_limit] | set <id> <memory_limit> | delete <id> | list\n");
+  }
+
+  return (ssize_t) count;
+}
+
+static const rtems_filesystem_file_handlers_r memctl_handlers = {
+  .open_h = rtems_filesystem_default_open,
+  .close_h = rtems_filesystem_default_close,
+  .read_h = rtems_filesystem_default_read,
+  .write_h = memctl_write,
+  .ioctl_h = rtems_filesystem_default_ioctl,
+  .lseek_h = rtems_filesystem_default_lseek,
+  .fstat_h = rtems_filesystem_default_fstat,
+  .ftruncate_h = rtems_filesystem_default_ftruncate,
+  .fsync_h = rtems_filesystem_default_fsync_or_fdatasync_success,
+  .fdatasync_h = rtems_filesystem_default_fsync_or_fdatasync_success,
+  .fcntl_h = rtems_filesystem_default_fcntl,
+  .readv_h = rtems_filesystem_default_readv,
+  .writev_h = rtems_filesystem_default_writev
+};
+
+static const IMFS_node_control memctl_node_control = {
+  .handlers = &memctl_handlers,
+  .node_initialize = IMFS_node_initialize_generic,
+  .node_remove = IMFS_node_remove_default,
+  .node_destroy = IMFS_node_destroy_default
+};
+
+void rtems_containerfs_register_memctl(void)
+{
+  static bool created = false;
+  int rv;
+
+  if (created) {
+    return;
+  }
+
+  rv = IMFS_make_generic_node(
+    "/memctl",
+    S_IFCHR | S_IRWXU | S_IRWXG | S_IRWXO,
+    &memctl_node_control,
+    NULL
+  );
+  if (rv == 0) {
+    created = true;
+    printf("[memctl] control file registered at /memctl\n");
+  } else {
+    printf("[memctl] failed to register control file (rv=%d)\n", rv);
+  }
+}
+#else
+void rtems_containerfs_register_cpuctl(void)
+{
+}
+
+void rtems_containerfs_register_memctl(void)
+{
+}
+#endif
+
+#ifdef RTEMSCFG_IO_CGROUP
+static ssize_t ioctl_write(rtems_libio_t *iop, const void *buffer, size_t count)
+{
+  char cmd[256];
+
+  (void) iop;
+  if (containerfs_copy_command(cmd, sizeof(cmd), buffer, count) == 0) {
+    return (ssize_t) count;
+  }
+
+  if (strncmp(cmd, "create", 6) == 0) {
+    uint32_t weight = 50;
+    IO_Cgroup_Limit limits;
+    uint32_t id;
+    rtems_status_code sc;
+
+    limits.read_bps_limit = 0;
+    limits.write_bps_limit = 0;
+    limits.window_size_ms = 1000;
+    (void) sscanf(cmd + 6, "%u", &weight);
+    sc = rtems_io_cgroup_manager_create(1024 * 1024, 1024 * 1024);
+    if (sc != RTEMS_SUCCESSFUL) {
+      printf("[ioctl] manager create failed: sc=%d\n", sc);
+      return (ssize_t) count;
+    }
+    sc = rtems_io_cgroup_create((uint16_t) weight, &limits, &id);
+    if (sc == RTEMS_SUCCESSFUL) {
+      containerfs_iocgroup_track_add(id);
+      printf("[ioctl] created: id=%" PRIu32 ", weight=%u\n", id, weight);
+    } else {
+      printf("[ioctl] create failed: sc=%d\n", sc);
+    }
+  } else if (strncmp(cmd, "set", 3) == 0) {
+    uint32_t id;
+    uint64_t rbps;
+    uint64_t wbps;
+    uint32_t window_ms;
+
+    if (sscanf(cmd + 3, "%" SCNu32 " %" SCNu64 " %" SCNu64 " %u", &id, &rbps, &wbps, &window_ms) == 4) {
+      IO_Cgroup_Control *cg = rtems_io_cgroup_get_by_id(id);
+      if (cg != NULL) {
+        IO_Cgroup_Limit limits;
+        limits.read_bps_limit = rbps;
+        limits.write_bps_limit = wbps;
+        limits.window_size_ms = window_ms;
+        rtems_io_cgroup_set_limits(cg, &limits);
+        printf(
+          "[ioctl] updated: id=%" PRIu32 ", read_bps=%" PRIu64 ", write_bps=%" PRIu64 ", window_ms=%u\n",
+          id,
+          rbps,
+          wbps,
+          window_ms
+        );
+      } else {
+        printf("[ioctl] set: id=%" PRIu32 " not found\n", id);
+      }
+    } else {
+      printf("[ioctl] usage: set <id> <read_bps> <write_bps> <window_ms>\n");
+    }
+  } else if (strncmp(cmd, "delete", 6) == 0) {
+    uint32_t id;
+    if (sscanf(cmd + 6, "%" SCNu32, &id) == 1) {
+      IO_Cgroup_Control *cg = rtems_io_cgroup_get_by_id(id);
+      if (cg != NULL) {
+        rtems_io_cgroup_delete(cg);
+        containerfs_iocgroup_track_remove(id);
+        printf("[ioctl] deleted: id=%" PRIu32 "\n", id);
+      } else {
+        printf("[ioctl] delete: id=%" PRIu32 " not found\n", id);
+      }
+    } else {
+      printf("[ioctl] usage: delete <id>\n");
+    }
+  } else if (strcmp(cmd, "list") == 0) {
+    size_t i;
+    if (containerfs_iocgroup_id_count == 0) {
+      printf("[ioctl] list: empty\n");
+    } else {
+      printf("[ioctl] list:");
+      for (i = 0; i < containerfs_iocgroup_id_count; ++i) {
+        IO_Cgroup_Control *cg = rtems_io_cgroup_get_by_id(containerfs_iocgroup_ids[i]);
+        if (cg != NULL) {
+          printf(
+            " id=%" PRIu32 "(r=%" PRIu64 ",w=%" PRIu64 ",win=%u)",
+            cg->ID,
+            cg->limits.read_bps_limit,
+            cg->limits.write_bps_limit,
+            cg->limits.window_size_ms
+          );
+        }
+      }
+      printf("\n");
+    }
+  } else {
+    printf("[ioctl] supported: create [weight] | set <id> <read_bps> <write_bps> <window_ms> | delete <id> | list\n");
+  }
+
+  return (ssize_t) count;
+}
+
+static const rtems_filesystem_file_handlers_r ioctl_handlers = {
+  .open_h = rtems_filesystem_default_open,
+  .close_h = rtems_filesystem_default_close,
+  .read_h = rtems_filesystem_default_read,
+  .write_h = ioctl_write,
+  .ioctl_h = rtems_filesystem_default_ioctl,
+  .lseek_h = rtems_filesystem_default_lseek,
+  .fstat_h = rtems_filesystem_default_fstat,
+  .ftruncate_h = rtems_filesystem_default_ftruncate,
+  .fsync_h = rtems_filesystem_default_fsync_or_fdatasync_success,
+  .fdatasync_h = rtems_filesystem_default_fsync_or_fdatasync_success,
+  .fcntl_h = rtems_filesystem_default_fcntl,
+  .readv_h = rtems_filesystem_default_readv,
+  .writev_h = rtems_filesystem_default_writev
+};
+
+static const IMFS_node_control ioctl_node_control = {
+  .handlers = &ioctl_handlers,
+  .node_initialize = IMFS_node_initialize_generic,
+  .node_remove = IMFS_node_remove_default,
+  .node_destroy = IMFS_node_destroy_default
+};
+
+void rtems_containerfs_register_ioctl(void)
+{
+  static bool created = false;
+  int rv;
+
+  if (created) {
+    return;
+  }
+
+  rv = IMFS_make_generic_node(
+    "/ioctl",
+    S_IFCHR | S_IRWXU | S_IRWXG | S_IRWXO,
+    &ioctl_node_control,
+    NULL
+  );
+  if (rv == 0) {
+    created = true;
+    printf("[ioctl] control file registered at /ioctl\n");
+  } else {
+    printf("[ioctl] failed to register control file (rv=%d)\n", rv);
+  }
+}
+#else
+void rtems_containerfs_register_ioctl(void)
+{
+}
+#endif
+
 #else
 void rtems_containerfs_register_pidctl(void)
 {
@@ -802,6 +1322,18 @@ void rtems_containerfs_register_netctl(void)
 }
 
 void rtems_containerfs_register_ipcctl(void)
+{
+}
+
+void rtems_containerfs_register_cpuctl(void)
+{
+}
+
+void rtems_containerfs_register_memctl(void)
+{
+}
+
+void rtems_containerfs_register_ioctl(void)
 {
 }
 #endif
