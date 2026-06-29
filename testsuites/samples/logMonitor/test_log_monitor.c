@@ -110,6 +110,7 @@ static rtems_task Init(rtems_task_argument arg)
   Thread_Control *self;
   RtemsMonitor snapshot;
   rtems_printer printer;
+  rtems_status_code sc;
 
   (void) arg;
 
@@ -120,8 +121,10 @@ static rtems_task Init(rtems_task_argument arg)
   config.targets =
     (container_log_target_t) (CONTAINER_LOG_TARGET_CONSOLE | CONTAINER_LOG_TARGET_MEMORY);
 
-  if (container_log_initialize(&config) != RTEMS_SUCCESSFUL) {
-    printf("container_log_initialize failed\n");
+  sc = container_log_initialize(&config);
+  if (sc != RTEMS_SUCCESSFUL) {
+    printf("container_log_initialize failed: %s\n", rtems_status_text(sc));
+    exit(1);
   }
 
   root = rtems_container_get_root();
@@ -193,6 +196,7 @@ static rtems_task Init(rtems_task_argument arg)
 #define CONFIGURE_APPLICATION_NEEDS_CLOCK_DRIVER
 #define CONFIGURE_APPLICATION_NEEDS_CONSOLE_DRIVER
 #define CONFIGURE_MAXIMUM_TASKS 4
+#define CONFIGURE_MAXIMUM_SEMAPHORES 4
 #define CONFIGURE_RTEMS_INIT_TASKS_TABLE
 #define CONFIGURE_INIT
 #include <rtems/confdefs.h>
