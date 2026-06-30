@@ -938,6 +938,46 @@ static ssize_t cpuctl_write(rtems_libio_t *iop, const void *buffer, size_t count
     } else {
       printf("[cpuctl] usage: delete <id>\n");
     }
+  } else if (strncmp(cmd, "pause", 5) == 0) {
+    uint32_t id;
+    if (sscanf(cmd + 5, "%" SCNu32, &id) == 1) {
+      ISR_lock_Context lock_context;
+      Cgroup_Control *cg;
+
+      cg = _Cgroup_Get(id, &lock_context);
+      _ISR_lock_ISR_enable(&lock_context);
+      if (cg != NULL) {
+        rtems_status_code sc = _CORE_cgroup_Suspend(
+          &cg->cgroup,
+          STATES_WAITING_FOR_CGROUP_CPU_QUOTA
+        );
+        printf("[cpuctl] paused: id=%" PRIu32 ", sc=%d\n", id, sc);
+      } else {
+        printf("[cpuctl] pause: id=%" PRIu32 " not found\n", id);
+      }
+    } else {
+      printf("[cpuctl] usage: pause <id>\n");
+    }
+  } else if (strncmp(cmd, "resume", 6) == 0) {
+    uint32_t id;
+    if (sscanf(cmd + 6, "%" SCNu32, &id) == 1) {
+      ISR_lock_Context lock_context;
+      Cgroup_Control *cg;
+
+      cg = _Cgroup_Get(id, &lock_context);
+      _ISR_lock_ISR_enable(&lock_context);
+      if (cg != NULL) {
+        rtems_status_code sc = _CORE_cgroup_Resume(
+          &cg->cgroup,
+          STATES_WAITING_FOR_CGROUP_CPU_QUOTA
+        );
+        printf("[cpuctl] resumed: id=%" PRIu32 ", sc=%d\n", id, sc);
+      } else {
+        printf("[cpuctl] resume: id=%" PRIu32 " not found\n", id);
+      }
+    } else {
+      printf("[cpuctl] usage: resume <id>\n");
+    }
   } else if (strcmp(cmd, "list") == 0) {
     size_t i;
     if (containerfs_cgroup_id_count == 0) {
@@ -960,7 +1000,7 @@ static ssize_t cpuctl_write(rtems_libio_t *iop, const void *buffer, size_t count
       printf("\n");
     }
   } else {
-    printf("[cpuctl] supported: create [quota period shares] | set <id> <quota> <period> | delete <id> | list\n");
+    printf("[cpuctl] supported: create [quota period shares] | set <id> <quota> <period> | delete <id> | pause <id> | resume <id> | list\n");
   }
 
   return (ssize_t) count;

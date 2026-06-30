@@ -59,6 +59,8 @@ links:
 - role: build-dependency
   uid: test_cpu_monitor_performance
 - role: build-dependency
+  uid: test_containerfs_lifecycle_pause
+- role: build-dependency
   uid: test_mem_monitor
 - role: build-dependency
   uid: test_mem_monitor_detailed
