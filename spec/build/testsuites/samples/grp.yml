@@ -51,6 +51,8 @@ links:
 - role: build-dependency
   uid: test_io_cgroup_2
 - role: build-dependency
+  uid: test_containerfs_all
+- role: build-dependency
   uid: test_log_monitor
 - role: build-dependency
   uid: test_cpu_monitor

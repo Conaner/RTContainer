@@ -257,6 +257,7 @@ rtems_task Init( rtems_task_argument ignored )
 
   status = rtems_cgroup_create( rtems_build_name( 'C', 'G', '1', ' ' ), &cg_id, &config );
   rtems_test_assert( status == RTEMS_SUCCESSFUL );
+  printf( "\033[32m[CGTEST6-6] Cgroup registered successfully\033[0m\n" );
   printf(
     "Config: 1 cgroup, memory_limit=%" PRIu64 " bytes (far above physical heap)\n",
     config.memory_limit

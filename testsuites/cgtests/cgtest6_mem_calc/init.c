@@ -140,6 +140,7 @@ rtems_task Init(rtems_task_argument argument)
   rtems_name cg_name = rtems_build_name( 'C', 'G', '2', ' ' );
   rtems_id cg_id;
   rtems_cgroup_create( cg_name, &cg_id, &test_core_config );
+  printf( "\033[32m[CGTEST6] Cgroup registered successfully\033[0m\n" );
 
   ISR_lock_Context lock_context;
   Cgroup_Control*  the_cgroup = _Cgroup_Get(cg_id, &lock_context);

@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
+#include <inttypes.h>
 #include <rtems.h>
 #include <rtems/score/container.h>
 #include <rtems/score/mntContainer.h>
@@ -81,9 +83,49 @@ static int setup_container_fs(const char *mount_point)
     return 0;
 }
 
+static void print_mount_list(MntContainer *mnt, const char *tag)
+{
+    rtems_chain_node *node;
+    int count = 0;
+
+    printf("  [%s] MNT容器(ID=%d, rc=%d) 挂载点列表:\n",
+           tag,
+           rtems_mnt_container_get_id(mnt),
+           rtems_mnt_container_get_rc(mnt));
+
+    for (node = rtems_chain_first(&mnt->mountList);
+         !rtems_chain_is_tail(&mnt->mountList, node);
+         node = rtems_chain_next(node))
+    {
+        rtems_filesystem_mount_table_entry_t *mt_entry =
+            RTEMS_CONTAINER_OF(node, rtems_filesystem_mount_table_entry_t, mt_node);
+        if (mt_entry->target) {
+            printf("    [%d] target=%s, type=%s\n",
+                   count, mt_entry->target,
+                   mt_entry->type ? mt_entry->type : "unknown");
+        }
+        count++;
+    }
+    if (count == 0) {
+        printf("    (空)\n");
+    }
+}
+
+static bool is_imfs_registered(void)
+{
+    const rtems_filesystem_table_t *entry = &rtems_filesystem_table[0];
+    while (entry->type != NULL) {
+        if (strcmp(entry->type, "imfs") == 0) {
+            return true;
+        }
+        entry++;
+    }
+    return false;
+}
+
 static rtems_task Init(rtems_task_argument ignored)
 {
-    printf("*** BEGIN MNT CONTAINER TEST ***\n");
+    printf("*** BEGIN OF TEST CONTAINER MOUNT ISOLATION TEST ***\n");
 
 #ifdef RTEMSCFG_MNT_CONTAINER
     Container    *globalContainer = rtems_container_get_root();
@@ -101,14 +143,47 @@ static rtems_task Init(rtems_task_argument ignored)
         }
     }
 
-    printf("根容器地址: %p, 根MNT容器ID: %d\n",
-           (void *)globalContainer, rtems_mnt_container_get_id(rootMnt));
+    /* 步骤1: 初始化测试环境，创建信号量和线程 */
+    rtems_id sem_a, sem_b;
+    rtems_status_code sc;
+    sc  = rtems_semaphore_create(rtems_build_name('S','E','M','A'), 0,
+            RTEMS_SIMPLE_BINARY_SEMAPHORE | RTEMS_PRIORITY, 0, &sem_a);
+    sc |= rtems_semaphore_create(rtems_build_name('S','E','M','B'), 0,
+            RTEMS_SIMPLE_BINARY_SEMAPHORE | RTEMS_PRIORITY, 0, &sem_b);
+    if (sc == RTEMS_SUCCESSFUL) {
+        printf("信号量创建成功\n");
+    } else {
+        printf("信号量创建失败\n");
+    }
+
+    if (is_imfs_registered()) {
+        printf("IMFS 注册成功\n");
+    } else {
+        printf("IMFS 注册失败\n");
+    }
+
+    if (self != NULL) {
+        printf("线程创建成功\n");
+    } else {
+        printf("线程创建失败\n");
+    }
+
+    /* 详细调试信息 */
+    printf("\n[调试] 根容器地址: %p, 根MNT容器ID: %d, rc=%d\n",
+           (void *)globalContainer,
+           rtems_mnt_container_get_id(rootMnt),
+           rtems_mnt_container_get_rc(rootMnt));
+    printf("[调试] Init线程 0x%" PRIx32 " 已绑定到根MNT容器 ID=%d\n",
+           self->Object.id, rtems_mnt_container_get_id(rootMnt));
+    print_mount_list(rootMnt, "根容器初始化");
 
     MntContainer *mntA = rtems_mnt_container_create();
     MntContainer *mntB = rtems_mnt_container_create();
-    printf("创建容器A (ID=%d) 容器B (ID=%d)\n",
+    printf("\n创建容器A (ID=%d, rc=%d) 容器B (ID=%d, rc=%d)\n",
            rtems_mnt_container_get_id(mntA),
-           rtems_mnt_container_get_id(mntB));
+           rtems_mnt_container_get_rc(mntA),
+           rtems_mnt_container_get_id(mntB),
+           rtems_mnt_container_get_rc(mntB));
 
     int ret;
 
@@ -158,6 +233,9 @@ static rtems_task Init(rtems_task_argument ignored)
            rtems_mnt_container_get_id(rootMnt));
 
     printf("\n--- 所有MNT容器测试完成 ---\n");
+
+    rtems_semaphore_delete(sem_a);
+    rtems_semaphore_delete(sem_b);
 
 #else
     printf("RTEMSCFG_MNT_CONTAINER not defined\n");

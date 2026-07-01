@@ -51,7 +51,7 @@ struct cpu_quota_case_runtime {
   bool timed_out;
 };
 
-static const char rtems_test_name[] = "CGTEST5 ALL CPU QUOTA";
+const char rtems_test_name[] = "CGTEST5 ALL CPU QUOTA";
 
 #define START_BARRIER_EVENT RTEMS_EVENT_31
 
@@ -80,6 +80,23 @@ static rtems_event_set task_completion_mask( const cpu_quota_case *tc )
   }
 
   return mask;
+}
+
+static void log_task_quota_state_change( uint32_t task_index, bool waiting )
+{
+  if ( waiting ) {
+    printf(
+      "\033[36m[Ticks:%" PRIu64 "] Task %" PRIu32 " entered cgroup CPU quota throttling\033[0m\n",
+      current_ticks(),
+      task_index
+    );
+  } else {
+    printf(
+      "\033[32m[Ticks:%" PRIu64 "] Task %" PRIu32 " left cgroup CPU quota throttling\033[0m\n",
+      current_ticks(),
+      task_index
+    );
+  }
 }
 
 static rtems_event_set full_completion_mask( const cpu_quota_case *tc )

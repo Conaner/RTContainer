@@ -69,8 +69,9 @@ static void print_container_info(const char *stage)
     if (executing->container) {
         printf("  NetContainer: %p\n", (void*)executing->container->netContainer);
         if (executing->container->netContainer) {
-            printf("  Container ID: %d\n", 
-                   executing->container->netContainer->containerID);
+            printf("  Container ID: %d, rc=%d\n", 
+                   executing->container->netContainer->containerID,
+                   executing->container->netContainer->rc);
             printf("  net_group: %p\n", 
                    (void*)executing->container->netContainer->group);
         }
@@ -90,7 +91,7 @@ static rtems_task udp_test_task(rtems_task_argument arg)
     // 创建 socket
     printf("\n[步骤1] 创建 socket\n");
     sock = socket(AF_INET, SOCK_DGRAM, 0);
-    printf("  socket() = %d (errno=%d: %s)\n", sock, errno, strerror(errno));
+    printf("  socket() = %d (FD=%d, errno=%d: %s)\n", sock, sock, errno, strerror(errno));
     if (sock < 0) {
         test_result = 1;
         rtems_task_delete(RTEMS_SELF);
@@ -193,7 +194,7 @@ static rtems_task Init(rtems_task_argument ignored)
         TEST_END();
         rtems_test_exit(1);
     }
-    printf("容器创建成功 (ID=%d)\n", test_container->containerID);
+    printf("容器创建成功 (ID=%d, rc=%d)\n", test_container->containerID, test_container->rc);
     printf("  NetContainer: %p\n", (void*)test_container);
     printf("  net_group: %p\n", (void*)test_container->group);
     

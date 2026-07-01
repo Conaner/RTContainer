@@ -1,252 +1,191 @@
-/*
- * PID container task switch benchmark.
- *
- * Method:
- * 1. Create two PID containers.
- * 2. Move Task01 to container A and Task02 to container B.
- * 3. Let both tasks alternate via RTEMS_YIELD_PROCESSOR.
- * 4. Measure with the same approach used in rhtaskswitch/taskswitch.c.
- */
-
-#include <rtems/btimer.h>
+#include <stdio.h>
 #include <rtems.h>
-#include <rtems/counter.h>
 #include <rtems/score/container.h>
 #include <rtems/score/pidContainer.h>
-#include <rtems/score/threadimpl.h>
-#include <inttypes.h>
-#include <stdio.h>
 #include <tmacros.h>
+#include <rtems/score/threadimpl.h>
 
-#define BENCHMARKS 50000
+const char rtems_test_name[] = "PID CONTAINER DELETE & INFO TEST";
 
-const char rtems_test_name[] = "PID CONTAINER TASK SWITCH";
+typedef struct {
+    rtems_id tid;
+    Thread_Control *thread;
+} FindThreadArg;
 
-static rtems_task Task01( rtems_task_argument ignored );
-static rtems_task Task02( rtems_task_argument ignored );
-static rtems_task Init( rtems_task_argument ignored );
-
-static rtems_id           Task_id[2];
-static rtems_name         Task_name[2];
-static uint32_t           loop_overhead;
-static uint32_t           dir_overhead;
-static unsigned long      count1;
-static unsigned long      count2;
-static rtems_status_code  status;
-
-static PidContainer *root_pid;
-static PidContainer *container_a;
-static PidContainer *container_b;
-
-static uint64_t ticks_to_nanoseconds( uint64_t ticks )
-{
-	return rtems_counter_ticks_to_nanoseconds( (rtems_counter_ticks) ticks );
+static bool find_thread_by_tid(Thread_Control *thread, void *arg) {
+    FindThreadArg *fta = (FindThreadArg *)arg;
+    if (thread->Object.id == fta->tid) {
+        fta->thread = thread;
+        return false; // 找到后停止遍历
+    }
+    return true; // 继续遍历
 }
 
-#if defined(CONFIGURE_STACK_CHECKER_ENABLED) || defined(RTEMS_DEBUG)
-#define PRINT_WARNING() \
-	do { \
-		puts( "\nTHE TIMES REPORTED BY THIS TEST INCLUDE DEBUG CODE!\n" ); \
-	} while (0)
-#else
-#define PRINT_WARNING() do { } while (0)
-#endif
-
-static void put_switch_time(
-	const char *message,
-	uint32_t    total_time,
-	uint32_t    iterations,
-	uint32_t    loop_ov,
-	uint32_t    dir_ov
-)
+static rtems_task test_task(rtems_task_argument arg)
 {
-	int64_t net_total;
-	int64_t adjusted;
-	uint32_t raw_avg;
-	uint64_t adjusted_ns;
-	uint64_t raw_avg_ns;
-	uint64_t loop_ov_ns;
-	uint64_t dir_ov_ns;
-
-	rtems_test_assert( iterations != 0 );
-
-	raw_avg = total_time / iterations;
-	net_total = (int64_t) total_time - (int64_t) loop_ov;
-	if ( net_total < 0 ) {
-		net_total = 0;
-	}
-
-	adjusted = ( net_total / (int64_t) iterations ) - (int64_t) dir_ov;
-	if ( adjusted < 0 ) {
-		adjusted = 0;
-	}
-
-	adjusted_ns = ticks_to_nanoseconds( (uint64_t) adjusted );
-	raw_avg_ns = ticks_to_nanoseconds( (uint64_t) raw_avg );
-	loop_ov_ns = ticks_to_nanoseconds( (uint64_t) loop_ov );
-	dir_ov_ns = ticks_to_nanoseconds( (uint64_t) dir_ov );
-
-	printf(
-		"%s value: %" PRId64 " ticks = %" PRIu64 ".%03" PRIu64 " us, raw_avg=%" PRIu32 " ticks = %" PRIu64 ".%03" PRIu64 " us, loop_ov=%" PRIu32 " ticks = %" PRIu64 ".%03" PRIu64 " us, dir_ov=%" PRIu32 " ticks = %" PRIu64 ".%03" PRIu64 " us\n",
-		message,
-		adjusted,
-		adjusted_ns / 1000ULL,
-		adjusted_ns % 1000ULL,
-		raw_avg,
-		raw_avg_ns / 1000ULL,
-		raw_avg_ns % 1000ULL,
-		loop_ov,
-		loop_ov_ns / 1000ULL,
-		loop_ov_ns % 1000ULL,
-		dir_ov,
-		dir_ov_ns / 1000ULL,
-		dir_ov_ns % 1000ULL
-	);
+    printf("test_task %d running!\n", arg);
+    rtems_task_exit();
 }
 
-static rtems_task Task02( rtems_task_argument ignored )
+static void print_thread_info(const char *msg, Thread_Control *thread)
 {
-	Thread_Control *self;
-	uint32_t        elapsed;
-
-	(void) ignored;
-
-	self = _Thread_Get_executing();
-	rtems_pid_container_move_task( root_pid, container_b, self );
-
-	benchmark_timer_initialize();
-
-	for ( count1 = 0; count1 < BENCHMARKS - 1; ++count1 ) {
-		rtems_task_wake_after( RTEMS_YIELD_PROCESSOR );
-	}
-
-	elapsed = benchmark_timer_read();
-	put_switch_time(
-		"PID container task switch",
-		elapsed,
-		( BENCHMARKS * 2 ) - 1,
-		loop_overhead,
-		dir_overhead
-	);
-
-	printf(
-		"Container A(id=%d, rc=%d), Container B(id=%d, rc=%d)\n",
-		rtems_pid_container_get_id( container_a ),
-		rtems_pid_container_get_rc( container_a ),
-		rtems_pid_container_get_id( container_b ),
-		rtems_pid_container_get_rc( container_b )
-	);
-
-	TEST_END();
-	rtems_test_exit( 0 );
+    ThreadContainerInfo info = rtems_pid_container_get_thread_info(thread);
+    if (info.isRoot == 1)
+        printf("%s: 线程在根容器，containerID=%d, id=%d\n", msg, info.containerID, info.vid_or_id);
+    else if (info.isRoot == 0)
+        printf("%s: 线程在子容器，containerID=%d, vid=%d\n", msg, info.containerID, info.vid_or_id);
+    else
+        printf("%s: 未找到线程所在容器\n", msg);
 }
 
-static rtems_task Task01( rtems_task_argument ignored )
+static void print_all_pid_containers(void)
 {
-	Thread_Control *self;
+    Container *container = rtems_container_get_root();
+    if (!container) {
+        printf("rtems_container_get_root() == NULL\n");
+        return;
+    }
+    printf("当前存在的PID容器：");
+    // 根容器
+    if (container->pidContainer)
+        printf("[root] id=%d(rc=%d) ",
+               rtems_pid_container_get_id(container->pidContainer),
+               rtems_pid_container_get_rc(container->pidContainer));
 
-	(void) ignored;
-
-	self = _Thread_Get_executing();
-	rtems_pid_container_move_task( root_pid, container_a, self );
-
-	status = rtems_task_start( Task_id[1], Task02, 0 );
-	directive_failed( status, "rtems_task_start of TA02" );
-
-	/* Yield once so Task02 can move to container B and start timing. */
-	rtems_task_wake_after( RTEMS_YIELD_PROCESSOR );
-
-	for ( count2 = 0; count2 < BENCHMARKS; ++count2 ) {
-		rtems_task_wake_after( RTEMS_YIELD_PROCESSOR );
-	}
-
-	/* Should never reach here. */
-	rtems_test_assert( false );
+    // 其它容器
+    PidContainerNode *node = container->pidContainerListHead;
+    while (node) {
+        if (node->pidContainer)
+            printf("[child] id=%d(rc=%d) ",
+                   rtems_pid_container_get_id(node->pidContainer),
+                   rtems_pid_container_get_rc(node->pidContainer));
+        node = node->next;
+    }
+    printf("\n");
 }
 
-static rtems_task Init( rtems_task_argument ignored )
+static rtems_task Init(rtems_task_argument ignored)
 {
-	(void) ignored;
+    rtems_id tid1, tid2, tid3;
+    rtems_status_code sc;
 
-	PRINT_WARNING();
-	TEST_BEGIN();
+    rtems_print_printer_fprintf_putc(&rtems_test_printer);
+    TEST_BEGIN();
 
 #ifdef RTEMSCFG_PID_CONTAINER
-	Container *root_container;
+    Container *container = rtems_container_get_root();
+    PidContainer *rootPidContainer = container->pidContainer;
 
-	root_container = rtems_container_get_root();
-	rtems_test_assert( root_container != NULL );
+    // 创建3个任务
+    sc = rtems_task_create(rtems_build_name('T','1',' ',' '), 1, RTEMS_MINIMUM_STACK_SIZE,
+        RTEMS_DEFAULT_MODES, RTEMS_DEFAULT_ATTRIBUTES, &tid1);
+    if (sc == RTEMS_SUCCESSFUL) rtems_task_start(tid1, test_task, 1);
 
-	root_pid = root_container->pidContainer;
-	rtems_test_assert( root_pid != NULL );
+    sc = rtems_task_create(rtems_build_name('T','2',' ',' '), 1, RTEMS_MINIMUM_STACK_SIZE,
+        RTEMS_DEFAULT_MODES, RTEMS_DEFAULT_ATTRIBUTES, &tid2);
+    // printf("创建任务2: sc=%d, tid2=0x%x\n", sc, tid2);
+    if (sc == RTEMS_SUCCESSFUL) rtems_task_start(tid2, test_task, 2);
 
-	container_a = rtems_pid_container_create();
-	container_b = rtems_pid_container_create();
+    sc = rtems_task_create(rtems_build_name('T','3',' ',' '), 1, RTEMS_MINIMUM_STACK_SIZE,
+        RTEMS_DEFAULT_MODES, RTEMS_DEFAULT_ATTRIBUTES, &tid3);
+    // printf("创建任务3: sc=%d, tid3=0x%x\n", sc, tid3);
+    if (sc == RTEMS_SUCCESSFUL) rtems_task_start(tid3, test_task, 3);
 
-	rtems_test_assert( container_a != NULL );
-	rtems_test_assert( container_b != NULL );
+    // 查找Thread_Control指针
+    Thread_Control *thread1 = NULL, *thread2 = NULL, *thread3 = NULL;
+    // ThreadNode *node = rootPidContainer->threadListHead;
+    // while (node) {
+    //     Thread_Control *thread = (Thread_Control *)node->thread;
+    //     if (thread->Object.id == tid1) thread1 = thread;
+    //     if (thread->Object.id == tid2) thread2 = thread;
+    //     if (thread->Object.id == tid3) thread3 = thread;
+    //     node = node->next;
+    // }
+    FindThreadArg fta1 = { .tid = tid1, .thread = NULL };
+    rtems_pid_container_foreach_thread(rootPidContainer, find_thread_by_tid, &fta1);
+    thread1 = fta1.thread;
+    FindThreadArg fta2 = { .tid = tid2, .thread = NULL };
+    rtems_pid_container_foreach_thread(rootPidContainer, find_thread_by_tid, &fta2);
+    thread2 = fta2.thread;
+    FindThreadArg fta3 = { .tid = tid3, .thread = NULL };
+    rtems_pid_container_foreach_thread(rootPidContainer, find_thread_by_tid, &fta3);
+    thread3 = fta3.thread;
 
-	printf(
-		"Created PID containers: A=%d, B=%d\n",
-		rtems_pid_container_get_id( container_a ),
-		rtems_pid_container_get_id( container_b )
-	);
 
-	Task_name[0] = rtems_build_name( 'T', 'A', '0', '1' );
-	status = rtems_task_create(
-		Task_name[0],
-		30,
-		RTEMS_MINIMUM_STACK_SIZE,
-		RTEMS_DEFAULT_MODES,
-		RTEMS_DEFAULT_ATTRIBUTES,
-		&Task_id[0]
-	);
-	directive_failed( status, "rtems_task_create of TA01" );
+    // 创建两个新的PID容器
+    PidContainer *containerA = rtems_pid_container_create();
+    PidContainer *containerB = rtems_pid_container_create();
 
-	Task_name[1] = rtems_build_name( 'T', 'A', '0', '2' );
-	status = rtems_task_create(
-		Task_name[1],
-		30,
-		RTEMS_MINIMUM_STACK_SIZE,
-		RTEMS_DEFAULT_MODES,
-		RTEMS_DEFAULT_ATTRIBUTES,
-		&Task_id[1]
-	);
-	directive_failed( status, "rtems_task_create of TA02" );
+    // 打印初始引用计数
+    printf("初始引用计数: 根容器(ID=%d) rc=%d, containerA(ID=%d) rc=%d, containerB(ID=%d) rc=%d\n",
+           rtems_pid_container_get_id(rootPidContainer),
+           rtems_pid_container_get_rc(rootPidContainer),
+           rtems_pid_container_get_id(containerA),
+           rtems_pid_container_get_rc(containerA),
+           rtems_pid_container_get_id(containerB),
+           rtems_pid_container_get_rc(containerB));
 
-	/* Measure loop overhead with no directives. */
-	benchmark_timer_initialize();
-	for ( count1 = 0; count1 < BENCHMARKS - 1; ++count1 ) {
-		/* empty */
-	}
-	for ( count2 = 0; count2 < BENCHMARKS; ++count2 ) {
-		/* empty */
-	}
-	loop_overhead = benchmark_timer_read();
+    // 打印初始信息
+    print_thread_info("初始 thread1", thread1);
+    print_thread_info("初始 thread2", thread2);
+    print_thread_info("初始 thread3", thread3);
 
-	/* Measure rtems_task_wake_after() overhead without a task switch. */
-	benchmark_timer_initialize();
-	for ( count1 = 0; count1 < BENCHMARKS; ++count1 ) {
-		rtems_task_wake_after( RTEMS_YIELD_PROCESSOR );
-	}
-	dir_overhead = benchmark_timer_read() / BENCHMARKS;
+    // 把 thread2、thread3 分别移到 containerA、containerB
+    rtems_pid_container_move_task(rootPidContainer, containerA, thread2);
+    printf("move后 rc: root=%d, containerA=%d, containerB=%d\n",
+           rtems_pid_container_get_rc(rootPidContainer),
+           rtems_pid_container_get_rc(containerA),
+           rtems_pid_container_get_rc(containerB));
+    rtems_pid_container_move_task(rootPidContainer, containerB, thread3);
+    printf("move后 rc: root=%d, containerA=%d, containerB=%d\n",
+           rtems_pid_container_get_rc(rootPidContainer),
+           rtems_pid_container_get_rc(containerA),
+           rtems_pid_container_get_rc(containerB));
 
-	status = rtems_task_start( Task_id[0], Task01, 0 );
-	directive_failed( status, "rtems_task_start of TA01" );
+    print_thread_info("切换后 thread1", thread1);
+    print_thread_info("切换后 thread2", thread2);
+    print_thread_info("切换后 thread3", thread3);
+
+    // 再把 thread2 从 containerA 移到 containerB
+    rtems_pid_container_move_task(containerA, containerB, thread2);
+    printf("move后 rc: root=%d, containerA=%d, containerB=%d\n",
+           rtems_pid_container_get_rc(rootPidContainer),
+           rtems_pid_container_get_rc(containerA),
+           rtems_pid_container_get_rc(containerB));
+
+    print_thread_info("thread2 移到 containerB 后", thread2);
+
+    if (!rtems_pid_container_exists(containerA)) 
+    {
+        printf("containerA 已经被删除或不存在\n");
+    } else {
+        printf("containerA 仍然存在，ID=%d\n", rtems_pid_container_get_id(containerA));
+    }
+
+    // 删除 containerB（thread2、thread3 应回到根容器）
+    printf("删除 containerB（ID=%d）\n", rtems_pid_container_get_id(containerB));
+    rtems_pid_container_delete(containerB);
+
+    // 再次打印所有线程信息
+    print_thread_info("删除后 thread1", thread1);
+    print_thread_info("删除后 thread2", thread2);
+    print_thread_info("删除后 thread3", thread3);
+
+    // 打印当前还存在的PID容器ID
+    print_all_pid_containers();
 #else
-	puts( "RTEMSCFG_PID_CONTAINER not enabled" );
-	TEST_END();
-	rtems_test_exit( 0 );
+    printf("RTEMSCFG_PID_CONTAINER not defined\n");
 #endif
 
-	rtems_task_exit();
+    TEST_END();
+    rtems_test_exit(0);
 }
 
-/* configuration information */
+#define CONFIGURE_APPLICATION_DOES_NOT_NEED_CLOCK_DRIVER
 #define CONFIGURE_APPLICATION_NEEDS_SIMPLE_CONSOLE_DRIVER
-#define CONFIGURE_APPLICATION_NEEDS_TIMER_DRIVER
+#define CONFIGURE_MAXIMUM_TASKS            8
 #define CONFIGURE_RTEMS_INIT_TASKS_TABLE
-#define CONFIGURE_MAXIMUM_TASKS 4
+#define CONFIGURE_INIT_TASK_ATTRIBUTES RTEMS_FLOATING_POINT
 #define CONFIGURE_INITIAL_EXTENSIONS RTEMS_TEST_INITIAL_EXTENSION
 #define CONFIGURE_INIT
 #include <rtems/confdefs.h>
