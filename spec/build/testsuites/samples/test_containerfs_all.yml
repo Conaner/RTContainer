@@ -5,19 +5,15 @@ copyrights:
 - Copyright (C) 2026 RTEMS Container Project
 cppflags: []
 cxxflags: []
-enabled-by:
-  and:
-  - RTEMSCFG_MONITOR_NET
-  - RTEMSCFG_NET_CONTAINER
+enabled-by: RTEMSCFG_CONTAINER_FILE
 features: c cprogram
-includes:
-- cpukit/libnetworking
+includes: []
 ldflags: []
 links: []
 source:
-- testsuites/samples/netMonitor/test_netMonitor_detailed.c
+- testsuites/samples/containerFS/test_containerfs_all.c
 stlib: []
-target: testsuites/samples/test_net_monitor_detailed.exe
+target: testsuites/samples/test_containerfs_all.exe
 type: build
 use-after: []
 use-before: []

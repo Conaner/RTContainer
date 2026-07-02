@@ -45,16 +45,20 @@ static void print_all_pid_containers(void)
         printf("rtems_container_get_root() == NULL\n");
         return;
     }
-    printf("当前存在的PID容器ID：");
+    printf("当前存在的PID容器：");
     // 根容器
     if (container->pidContainer)
-        printf("%d ", rtems_pid_container_get_id(container->pidContainer));
+        printf("[root] id=%d(rc=%d) ",
+               rtems_pid_container_get_id(container->pidContainer),
+               rtems_pid_container_get_rc(container->pidContainer));
 
     // 其它容器
     PidContainerNode *node = container->pidContainerListHead;
     while (node) {
         if (node->pidContainer)
-            printf("%d %d", rtems_pid_container_get_id(node->pidContainer), rtems_pid_container_get_rc(node->pidContainer));
+            printf("[child] id=%d(rc=%d) ",
+                   rtems_pid_container_get_id(node->pidContainer),
+                   rtems_pid_container_get_rc(node->pidContainer));
         node = node->next;
     }
     printf("\n");
@@ -111,6 +115,15 @@ static rtems_task Init(rtems_task_argument ignored)
     // 创建两个新的PID容器
     PidContainer *containerA = rtems_pid_container_create();
     PidContainer *containerB = rtems_pid_container_create();
+
+    // 打印初始引用计数
+    printf("初始引用计数: 根容器(ID=%d) rc=%d, containerA(ID=%d) rc=%d, containerB(ID=%d) rc=%d\n",
+           rtems_pid_container_get_id(rootPidContainer),
+           rtems_pid_container_get_rc(rootPidContainer),
+           rtems_pid_container_get_id(containerA),
+           rtems_pid_container_get_rc(containerA),
+           rtems_pid_container_get_id(containerB),
+           rtems_pid_container_get_rc(containerB));
 
     // 打印初始信息
     print_thread_info("初始 thread1", thread1);

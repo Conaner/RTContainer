@@ -6,9 +6,7 @@
 #include <stdlib.h>
 #include <rtems/score/threadimpl.h>
 
-#ifdef RTEMSCFG_CONTAINER_LOG
 #include <rtems/score/containerlog.h>
-#endif
 
 static int g_utsContainerId = 0;
 /* Static root pointer avoids accidental root deletion after task moves. */
@@ -56,6 +54,10 @@ UtsContainer *rtems_uts_container_create(const char *name)
         strncpy(container->name, name, sizeof(container->name) - 1);
         container->name[sizeof(container->name) - 1] = '\0';
     } else {
+        CONTAINER_LOG_WARN(
+          "UTS container name is %s, using default name",
+          name == NULL ? "NULL" : "empty"
+        );
         strcpy(container->name, "uts");
     }      
 

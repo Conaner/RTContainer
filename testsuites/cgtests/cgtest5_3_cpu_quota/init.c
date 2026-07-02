@@ -210,6 +210,8 @@ rtems_task Init( rtems_task_argument ignored )
     );
   }
 
+  printf( "\033[32m[CGTEST5-3] All cgroups registered successfully\033[0m\n" );
+
   Init_task_id = rtems_task_self();
 
   for ( uint32_t i = 0; i < TEST_TASK_COUNT; ++i ) {

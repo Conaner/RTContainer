@@ -1,5 +1,6 @@
 // #ifdef RTEMSCFG_PID_CONTAINER
 #include <stdlib.h>
+#include <stdio.h>
 #include <rtems/score/pidContainer.h>
 #include <rtems/score/thread.h>
 #include <rtems/score/threadimpl.h>
@@ -165,6 +166,7 @@ void rtems_pid_container_remove_task(PidContainer *container, Thread_Control *th
 
     // 如果容器中没有线程了，删除容器
     if (container->rc == 0) {
+        printf("[PID Container] rc=0, 自动删除容器 ID=%d\n", container->containerID);
         rtems_pid_container_delete(container);
     }
 }

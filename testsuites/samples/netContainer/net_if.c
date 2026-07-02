@@ -258,8 +258,9 @@ static int list_interfaces_in_container(NetContainer *container)
     int count = 0;
     struct ifnet *ifp = container->group->ifnet_p;
 
-    printf("  容器%d中的网络接口 (链表头地址=0x%p):\n",
-           container->containerID, (void *)container->group->ifnet_p);
+    printf("  容器%d(ID=%d, rc=%d)中的网络接口 (链表头地址=0x%p):\n",
+           container->containerID, container->containerID, container->rc,
+           (void *)container->group->ifnet_p);
     while (ifp)
     {
         printf("    - %s%d (索引=%d, 标志=0x%x, if_next=0x%p)\n",
@@ -296,7 +297,8 @@ static rtems_task container1_task(rtems_task_argument arg)
         current_container = self->container->netContainer;
     }
     rtems_interrupt_enable(level);
-    printf("当前线程容器ID: %d\n", current_container->containerID);
+    printf("当前线程容器ID: %d, rc=%d\n",
+           current_container->containerID, current_container->rc);
 
     printf("\n--- 测试1: 创建容器2网络接口 ---\n");
 
@@ -392,7 +394,8 @@ static rtems_task container2_task(rtems_task_argument arg)
         current_container = self->container->netContainer;
     }
     rtems_interrupt_enable(level);
-    printf("当前线程容器ID: %d\n", current_container->containerID);
+    printf("当前线程容器ID: %d, rc=%d\n",
+           current_container->containerID, current_container->rc);
 
     rtems_semaphore_obtain(sync_sem1, RTEMS_WAIT, RTEMS_NO_TIMEOUT);
 
@@ -513,8 +516,9 @@ static rtems_task Init(rtems_task_argument ignored)
         rtems_test_exit(1);
     }
 
-    printf("[PASS] 网络容器创建成功: 容器2(ID=%d), 容器3(ID=%d)\n",
-           net_container1->containerID, net_container2->containerID);
+    printf("[PASS] 网络容器创建成功: 容器2(ID=%d, rc=%d), 容器3(ID=%d, rc=%d)\n",
+           net_container1->containerID, net_container1->rc,
+           net_container2->containerID, net_container2->rc);
 
     Container *root_container = rtems_container_get_root();
     if (!root_container || !root_container->netContainer)
@@ -561,7 +565,8 @@ static rtems_task Init(rtems_task_argument ignored)
         thread1->container->netContainer = net_container1;
         net_container1->rc++;
         _ISR_lock_ISR_enable(&lock_context);
-        printf("[PASS] 任务1已分配到容器%d\n", net_container1->containerID);
+        printf("[PASS] 任务1已分配到容器%d (rc=%d)\n",
+               net_container1->containerID, net_container1->rc);
     }
     else
     {
@@ -591,7 +596,8 @@ static rtems_task Init(rtems_task_argument ignored)
         thread2->container->netContainer = net_container2;
         net_container2->rc++;
         _ISR_lock_ISR_enable(&lock_context);
-        printf("[PASS] 任务2已分配到容器%d\n", net_container2->containerID);
+        printf("[PASS] 任务2已分配到容器%d (rc=%d)\n",
+               net_container2->containerID, net_container2->rc);
     }
     else
     {
