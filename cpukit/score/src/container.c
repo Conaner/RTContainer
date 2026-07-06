@@ -617,6 +617,54 @@ rtems_status_code rtems_unified_container_leave(
     return first_error;
 }
 
+rtems_status_code rtems_unified_container_pause(
+    RtemsContainer *container
+)
+{
+#ifdef RTEMS_CGROUP
+    if (container == NULL) {
+        return RTEMS_INVALID_ADDRESS;
+    }
+
+    if ((container->flags & (RTEMS_UNIFIED_CONTAINER_CPU | RTEMS_UNIFIED_CONTAINER_MEM)) == 0 ||
+        container->core_cgroup == NULL) {
+        return RTEMS_NOT_CONFIGURED;
+    }
+
+    return _CORE_cgroup_Suspend(
+        container->core_cgroup,
+        STATES_WAITING_FOR_CGROUP_CPU_QUOTA
+    );
+#else
+    (void) container;
+    return RTEMS_NOT_CONFIGURED;
+#endif
+}
+
+rtems_status_code rtems_unified_container_resume(
+    RtemsContainer *container
+)
+{
+#ifdef RTEMS_CGROUP
+    if (container == NULL) {
+        return RTEMS_INVALID_ADDRESS;
+    }
+
+    if ((container->flags & (RTEMS_UNIFIED_CONTAINER_CPU | RTEMS_UNIFIED_CONTAINER_MEM)) == 0 ||
+        container->core_cgroup == NULL) {
+        return RTEMS_NOT_CONFIGURED;
+    }
+
+    return _CORE_cgroup_Resume(
+        container->core_cgroup,
+        STATES_WAITING_FOR_CGROUP_CPU_QUOTA
+    );
+#else
+    (void) container;
+    return RTEMS_NOT_CONFIGURED;
+#endif
+}
+
 rtems_status_code rtems_unified_container_delete(
     RtemsContainer *container
 )

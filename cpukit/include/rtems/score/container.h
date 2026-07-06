@@ -183,6 +183,14 @@ rtems_status_code rtems_unified_container_leave(
     Thread_Control *thread
 );
 
+rtems_status_code rtems_unified_container_pause(
+    RtemsContainer *container
+);
+
+rtems_status_code rtems_unified_container_resume(
+    RtemsContainer *container
+);
+
 rtems_status_code rtems_unified_container_delete(
     RtemsContainer *container
 );
