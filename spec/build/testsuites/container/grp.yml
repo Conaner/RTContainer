@@ -32,6 +32,8 @@ links:
   uid: container03
 - role: build-dependency
   uid: container04
+- role: build-dependency
+  uid: container05
 type: build
 use-after:
 - rtemstest

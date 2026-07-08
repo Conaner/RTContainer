@@ -395,7 +395,7 @@ static int create_loopback_for_container(NetContainer *netContainer)
     /* Configure IPv4 only if current thread/container context is usable; failures are non-fatal. */
     (void) configure_loopback_ipv4_in_container(netContainer);
 
-    printf("容器%d: 创建独立的 loopback 接口\n", netContainer->containerID);
+    // printf("容器%d: 创建独立的 loopback 接口\n", netContainer->containerID);
     CONTAINER_LOG_INFO("Loopback ready for NET container: ID=%d", netContainer->containerID);
     return 0;
 }
@@ -422,7 +422,7 @@ NetContainer *rtems_net_container_create(void)
         return NULL;
     }
 
-    printf("创建网络隔离容器: ID=%d\n", netContainer->containerID);
+    // printf("创建网络隔离容器: ID=%d\n", netContainer->containerID);
 
     // 为容器创建独立的 loopback 接口
     if (create_loopback_for_container(netContainer) != 0) {
@@ -473,7 +473,7 @@ void rtems_net_container_delete(NetContainer *netContainer)
     if (netContainer == root)
         return;
 
-    printf("删除子net容器: ID=%d, rc=%d\n", netContainer->containerID, netContainer->rc);
+    // printf("删除子net容器: ID=%d, rc=%d\n", netContainer->containerID, netContainer->rc);
 
     // 将所有使用该容器的任务切换到根容器
     rtems_task_iterate(switch_to_root_net, netContainer);
@@ -552,7 +552,7 @@ void rtems_net_container_add_to_list(NetContainer *netContainer)
     new_node->next = *head;
     *head = new_node;
 
-    printf("添加net容器到链表: ID=%d, 地址=%p\n", netContainer->containerID, (void *)netContainer);    //调试完成之后再注释掉
+    // printf("添加net容器到链表: ID=%d, 地址=%p\n", netContainer->containerID, (void *)netContainer);    //调试完成之后再注释掉
     CONTAINER_LOG_DEBUG("NET container added to list: ID=%d", netContainer->containerID);
 }
 
@@ -584,7 +584,7 @@ void rtems_net_container_remove_from_list(NetContainer *netContainer)
             }
 
             free(current);
-            printf("从链表中移除net容器: ID=%d, 地址=%p\n", netContainer->containerID, (void *)netContainer);    //调试完成之后再注释掉
+            // printf("从链表中移除net容器: ID=%d, 地址=%p\n", netContainer->containerID, (void *)netContainer);    //调试完成之后再注释掉
             CONTAINER_LOG_DEBUG("NET container removed from list: ID=%d", netContainer->containerID);
             return;
         }
