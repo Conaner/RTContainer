@@ -69,9 +69,11 @@ static rtems_task WorkerTask(rtems_task_argument arg)
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
   rtems_test_assert(self->cgroup == rtems_unified_container_get_core_cgroup(managed_container));
   rtems_test_assert(self->is_added_to_cgroup);
+  puts("[step 07] Worker entered CPU container");
 
   sc = rtems_event_send(init_task_id, WORKER_READY_EVENT);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+  puts("[step 08] Worker ready event sent");
 
   while (!worker_stop) {
     ++worker_ticks;
@@ -80,6 +82,7 @@ static rtems_task WorkerTask(rtems_task_argument arg)
 
   sc = rtems_unified_container_leave(managed_container, self);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+  puts("[step 15] Worker left CPU container");
 
   sc = rtems_event_send(init_task_id, WORKER_DONE_EVENT);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
@@ -88,9 +91,12 @@ static rtems_task WorkerTask(rtems_task_argument arg)
 
 static void run_containerfs_lifecycle_probe(void)
 {
-  puts("[fs] register /cpuctl");
   rtems_containerfs_register_cpuctl();
+  puts("[step 01] /cpuctl registered");
+
   write_cmd("/cpuctl", "list\n");
+  puts("[step 02] /cpuctl opened");
+  puts("[step 03] list command accepted");
 }
 
 static rtems_task Init(rtems_task_argument arg)
@@ -126,10 +132,14 @@ static rtems_task Init(rtems_task_argument arg)
   sc = rtems_unified_container_create(&config, &managed_container);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
   rtems_test_assert(managed_container != NULL);
+  puts("[step 04] CPU container created");
 
   core = rtems_unified_container_get_core_cgroup(managed_container);
   rtems_test_assert(core != NULL);
-  printf("[container] created with cgroup id=%" PRIu32 "\n", managed_container->cgroup_id);
+  printf(
+    "[step 05] core cgroup ready, cgroup id=%" PRIu32 "\n",
+    managed_container->cgroup_id
+  );
 
   sc = rtems_task_create(
     rtems_build_name('W', 'R', 'K', 'P'),
@@ -143,6 +153,7 @@ static rtems_task Init(rtems_task_argument arg)
 
   sc = rtems_task_start(worker_task_id, WorkerTask, 0);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+  puts("[step 06] Worker task created and started");
 
   sc = rtems_event_receive(
     WORKER_READY_EVENT,
@@ -154,14 +165,19 @@ static rtems_task Init(rtems_task_argument arg)
 
   before_pause = worker_ticks;
   wait_until_counter_changes(before_pause);
+  printf("[step 09] Worker running, ticks=%" PRIu32 "\n", worker_ticks);
 
   snprintf(cmd, sizeof(cmd), "pause %" PRIu32 "\n", managed_container->cgroup_id);
   write_cmd("/cpuctl", cmd);
+  printf(
+    "[step 10] pause command accepted for cgroup id=%" PRIu32 "\n",
+    managed_container->cgroup_id
+  );
 
   before_pause = worker_ticks;
   rtems_task_wake_after(5);
   during_pause = worker_ticks;
-  printf("[container] ticks while paused: before=%" PRIu32 ", after=%" PRIu32 "\n",
+  printf("[step 11] ticks while paused: before=%" PRIu32 ", after=%" PRIu32 "\n",
     before_pause,
     during_pause
   );
@@ -169,9 +185,17 @@ static rtems_task Init(rtems_task_argument arg)
 
   snprintf(cmd, sizeof(cmd), "resume %" PRIu32 "\n", managed_container->cgroup_id);
   write_cmd("/cpuctl", cmd);
+  printf(
+    "[step 12] resume command accepted for cgroup id=%" PRIu32 "\n",
+    managed_container->cgroup_id
+  );
+
   wait_until_counter_changes(during_pause);
+  printf("[step 13] Worker resumed, ticks=%" PRIu32 "\n", worker_ticks);
 
   worker_stop = true;
+  puts("[step 14] Worker stop requested");
+
   sc = rtems_event_receive(
     WORKER_DONE_EVENT,
     RTEMS_EVENT_ALL | RTEMS_WAIT,
@@ -179,11 +203,14 @@ static rtems_task Init(rtems_task_argument arg)
     &received
   );
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
+  puts("[step 16] Worker done event received");
 
   sc = rtems_unified_container_delete(managed_container);
   rtems_test_assert(sc == RTEMS_SUCCESSFUL);
   managed_container = NULL;
+  puts("[step 17] CPU container deleted");
   puts("[container] deleted");
+  puts("[step 18] lifecycle pause/resume test completed");
 #else
   printf("ContainerFS lifecycle pause/resume requires RTEMSCFG_CONTAINER_FILE and RTEMS_CGROUP\n");
 #endif
